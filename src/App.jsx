@@ -176,6 +176,10 @@ export default function App() {
     value: dashboardRecords.filter(r => r.division === name).reduce((s, r) => s + Number(r.leaders || 0), 0)
   }));
   const sectionData = SECTIONS.map(([key, label]) => ({ name: label, total: totals[key], color: SECTION_COLORS[label] || '#174a78' }));
+  const genderData = [
+    { name: 'Male Scouts', value: totals.male },
+    { name: 'Female Scouts', value: totals.female }
+  ];
   const trendData = useMemo(() => monthlyData(dashboardRecords, 'scouts'), [dashboardRecords]);
   const revenueData = useMemo(() => monthlyData(dashboardRecords, 'paid'), [dashboardRecords]);
   const districtNames = [...new Set([
@@ -333,7 +337,10 @@ export default function App() {
             <Panel title="Scouts by Division" subtitle="Share of registered scouts"><ChartPie data={scoutByDivision}/></Panel>
             <Panel title="Unit Leaders by Division" subtitle="Share of registered Unit Leaders"><ChartPie data={leadersByDivision}/></Panel>
           </div>
-          <Panel title="Scout Registration Breakdown" subtitle="Council-wide totals by section"><div className="chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={sectionData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis allowDecimals={false}/><Tooltip formatter={v => fmt(v)}/><Bar dataKey="total" radius={[5,5,0,0]}>{sectionData.map((entry, index) => <Cell key={entry.name} fill={SECTION_COLOR_LIST[index] || '#174a78'} />)}</Bar></BarChart></ResponsiveContainer></div></Panel>
+          <div className="two-col">
+            <Panel title="Male to Female Scouts" subtitle="Gender breakdown for all scouts"><ChartPie data={genderData}/></Panel>
+            <Panel title="Scout Registration Breakdown" subtitle="Council-wide totals by section"><div className="chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={sectionData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis allowDecimals={false}/><Tooltip formatter={v => fmt(v)}/><Bar dataKey="total" radius={[5,5,0,0]}>{sectionData.map((entry, index) => <Cell key={entry.name} fill={SECTION_COLOR_LIST[index] || '#174a78'} />)}</Bar></BarChart></ResponsiveContainer></div></Panel>
+          </div>
           <div className="two-col">
             <Panel title="Registration Trend" subtitle="Scouts registered per month"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="month" tick={{fontSize:10}}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="scouts" stroke="#174a78" strokeWidth={3} dot={{fill:'#e4ad37',r:4}}/></LineChart></ResponsiveContainer></div></Panel>
             <Panel title="Monthly Collections" subtitle="Recorded payments by registration month"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={revenueData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="month" tick={{fontSize:10}}/><YAxis/><Tooltip formatter={v => money(v)}/><Bar dataKey="collections" fill="#26936d" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div></Panel>
