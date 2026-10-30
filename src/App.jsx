@@ -30,9 +30,10 @@ const SECTION_COLORS = {
 const SECTION_COLOR_LIST = ['#cfe7f6', '#f5c94c', '#2c9a6f', '#d34b4b', '#123a5a'];
 const STORAGE_KEY = 'bspAgusanReact';
 const EMPTY = { divisions: DEFAULT_DIVISIONS, districts: {}, schools: {}, records: [] };
+const DEFAULT_ACCOUNT_PASSWORD = 'Mabuhayscouts!2026';
 const AUTH_USERS = {
-  'christian@bspagusancouncil.com': { email: 'christian@bspagusancouncil.com', role: 'admin', password: 'admin123' },
-  'staff@bspagusancouncil.com': { email: 'staff@bspagusancouncil.com', role: 'viewer', password: 'viewer123' }
+  'christian@bspagusancouncil.com': { email: 'christian@bspagusancouncil.com', role: 'admin', password: DEFAULT_ACCOUNT_PASSWORD },
+  'staff@bspagusancouncil.com': { email: 'staff@bspagusancouncil.com', role: 'viewer', password: DEFAULT_ACCOUNT_PASSWORD }
 };
 const unique = values => [...new Set((values || []).filter(Boolean))];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -431,9 +432,10 @@ export default function App() {
                 <input type="password" value={loginForm.password} onChange={e => setLoginForm(prev => ({ ...prev, password: e.target.value }))} placeholder="Enter your password" />
               </label>
               <div className="login-help">
-                <strong>Demo accounts</strong>
+                <strong>Approved accounts</strong>
                 <div>Admin: christian@bspagusancouncil.com</div>
                 <div>Viewer: staff@bspagusancouncil.com</div>
+                <div>Password: Mabuhayscouts!2026</div>
               </div>
               <button type="submit" className="btn gold wide">Log in</button>
             </form>
