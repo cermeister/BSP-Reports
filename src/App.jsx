@@ -469,7 +469,7 @@ export default function App() {
                 <strong>Approved accounts</strong>
                 <div>Admin: christian@bspagusancouncil.com</div>
                 <div>Viewer: staff@bspagusancouncil.com</div>
-                <div><b>Contact Christian Cervantes for access</b></div>
+                <div><b>Contact Brando Faelnar for access</b></div>
               </div>
               <button type="submit" className="btn gold wide">Log in</button>
             </form>
