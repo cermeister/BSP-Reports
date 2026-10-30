@@ -30,6 +30,10 @@ const SECTION_COLORS = {
 const SECTION_COLOR_LIST = ['#cfe7f6', '#f5c94c', '#2c9a6f', '#d34b4b', '#123a5a'];
 const STORAGE_KEY = 'bspAgusanReact';
 const EMPTY = { divisions: DEFAULT_DIVISIONS, districts: {}, schools: {}, records: [] };
+const AUTH_USERS = {
+  'christian@bspagusancouncil.com': { email: 'christian@bspagusancouncil.com', role: 'admin', password: 'admin123' },
+  'staff@bspagusancouncil.com': { email: 'staff@bspagusancouncil.com', role: 'viewer', password: 'viewer123' }
+};
 const unique = values => [...new Set((values || []).filter(Boolean))];
 const today = () => new Date().toISOString().slice(0, 10);
 const money = n => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(n || 0));
@@ -59,8 +63,19 @@ function Panel({ title, subtitle, children, className = '' }) {
 }
 function EmptyChart() { return <div className="empty-chart">No data available yet. Add registration records to generate this chart.</div>; }
 
+const getStoredUser = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem('bspAgusanAuth') || 'null');
+    return saved && AUTH_USERS[saved.email] ? AUTH_USERS[saved.email] : null;
+  } catch {
+    return null;
+  }
+};
+
 export default function App() {
   const [db, setDb] = useState(load);
+  const [authUser, setAuthUser] = useState(getStoredUser);
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [page, setPage] = useState('dashboard');
   const [selectedDivision, setSelectedDivision] = useState(DEFAULT_DIVISIONS[0]);
   const [year, setYear] = useState(new Date().getFullYear().toString());
@@ -76,6 +91,14 @@ export default function App() {
     male: 0, female: 0, leaders: 0, heads: 0, scoutFee: 0, leaderFee: 0, institutionFee: 0,
     paid: 0, paymentNotes: ''
   });
+
+  useEffect(() => {
+    if (authUser) {
+      localStorage.setItem('bspAgusanAuth', JSON.stringify(authUser));
+    } else {
+      localStorage.removeItem('bspAgusanAuth');
+    }
+  }, [authUser]);
 
   useEffect(() => {
     if (!supabase) {
@@ -165,6 +188,8 @@ export default function App() {
   }, [db]);
 
   const records = db.records || [];
+  const isAdmin = authUser?.role === 'admin';
+  const isViewer = authUser?.role === 'viewer';
   const yearOptions = [...new Set([new Date().getFullYear(), ...records.map(r => Number((r.date || '').slice(0, 4))).filter(Boolean)])].sort((a,b) => b-a);
   const monthOptions = ['all', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
   const currentMonth = new Date().getMonth() + 1;
@@ -226,6 +251,10 @@ export default function App() {
       scoutFee: 0, leaderFee: 0, institutionFee: 0, paid: 0, paymentNotes: '' });
   }
   function saveRecord(e) {
+    if (!isAdmin) {
+      window.alert('Only the admin account can save registration records.');
+      return;
+    }
     e.preventDefault();
     const record = { ...form, id: editingId || crypto.randomUUID(), expected };
     if (Number(form.male) + Number(form.female) !== formScouts &&
@@ -243,18 +272,34 @@ export default function App() {
     resetForm(); setPage('registrations');
   }
   function editRecord(r) {
+    if (!isAdmin) {
+      window.alert('Only the admin account can edit records.');
+      return;
+    }
     setForm({ ...r }); setEditingId(r.id); setPage('form');
   }
   function deleteRecord(id) {
+    if (!isAdmin) {
+      window.alert('Only the admin account can delete records.');
+      return;
+    }
     if (window.confirm('Delete this registration record?')) setDb(prev => ({ ...prev, records: prev.records.filter(r => r.id !== id) }));
   }
   function addDivision() {
+    if (!isAdmin) {
+      window.alert('Only the admin account can manage divisions.');
+      return;
+    }
     const value = window.prompt('Enter the new division name:')?.trim();
     if (!value) return;
     if (db.divisions.some(d => d.toLowerCase() === value.toLowerCase())) return window.alert('Division already exists.');
     setDb(prev => ({ ...prev, divisions: [...prev.divisions, value], districts: { ...prev.districts, [value]: [] } }));
   }
   function addDistrict() {
+    if (!isAdmin) {
+      window.alert('Only the admin account can manage districts.');
+      return;
+    }
     const division = window.prompt('Enter the division name exactly as listed:\n' + db.divisions.join('\n'))?.trim();
     if (!division || !db.divisions.includes(division)) return window.alert('Please enter an existing division name.');
     const district = window.prompt(`Enter a district under ${division}:`)?.trim();
@@ -262,6 +307,10 @@ export default function App() {
     setDb(prev => ({ ...prev, districts: { ...prev.districts, [division]: unique([...(prev.districts[division] || []), district]) } }));
   }
   function addSchool() {
+    if (!isAdmin) {
+      window.alert('Only the admin account can manage schools.');
+      return;
+    }
     const division = window.prompt('Enter the division name exactly as listed:\n' + db.divisions.join('\n'))?.trim();
     if (!division || !db.divisions.includes(division)) return window.alert('Please enter an existing division name.');
     const district = window.prompt(`Enter the district under ${division}:`)?.trim();
@@ -320,22 +369,92 @@ export default function App() {
   const navItems = [
     ['dashboard', 'Dashboard', LayoutDashboard],
     ['registrations', 'Registrations', ClipboardList],
-    ['form', 'Add Registration', PlusCircle],
+    ...(isAdmin ? [['form', 'Add Registration', PlusCircle]] : []),
     ['reports', 'Reports', FileText],
-    ['settings', 'Divisions & Districts', Settings]
+    ...(isAdmin ? [['settings', 'Divisions & Districts', Settings]] : [])
   ];
-  function navigate(id) { setPage(id); setMobileNav(false); }
+  function navigate(id) {
+    if ((id === 'form' || id === 'settings') && !isAdmin) {
+      window.alert('This area is restricted to the admin account.');
+      return;
+    }
+    setPage(id); setMobileNav(false);
+  }
+
+  function handleLoginSubmit(e) {
+    e.preventDefault();
+    const email = loginForm.email.trim().toLowerCase();
+    const account = AUTH_USERS[email];
+    if (!account) {
+      window.alert('Access denied. Use one of the approved BSP council accounts.');
+      return;
+    }
+    if (loginForm.password && loginForm.password !== account.password) {
+      window.alert('Incorrect password for this account.');
+      return;
+    }
+    setAuthUser(account);
+    setPage('dashboard');
+    setLoginForm({ email: '', password: '' });
+  }
+
+  function handleLogout() {
+    setAuthUser(null);
+    setPage('dashboard');
+  }
+
+  if (!authUser) {
+    return <div className="auth-shell">
+      <div className="auth-layout">
+        <div className="auth-visual">
+          <div className="auth-brand"><div className="brand-mark large">BSP</div><div><b>AGUSAN COUNCIL</b><span>Registration Analytics & Reporting System</span></div></div>
+          <div className="auth-card">
+            <h2>Scouts by Division</h2>
+            <p>Interactive council overview preview</p>
+            <div className="login-chart-wrap">
+              <ChartPie data={scoutByDivision.map(item => ({ name: item.name, value: item.value }))} />
+            </div>
+          </div>
+        </div>
+        <div className="auth-panel">
+          <div className="auth-panel-inner">
+            <span className="auth-badge">Secure access</span>
+            <h1>Sign in</h1>
+            <p>Use your BSP Agusan Council account to continue.</p>
+            <form onSubmit={handleLoginSubmit} className="login-form">
+              <label className="field">
+                <span>Email address</span>
+                <input type="email" value={loginForm.email} onChange={e => setLoginForm(prev => ({ ...prev, email: e.target.value }))} placeholder="name@bspagusancouncil.com" required />
+              </label>
+              <label className="field">
+                <span>Password</span>
+                <input type="password" value={loginForm.password} onChange={e => setLoginForm(prev => ({ ...prev, password: e.target.value }))} placeholder="Enter your password" />
+              </label>
+              <div className="login-help">
+                <strong>Demo accounts</strong>
+                <div>Admin: christian@bspagusancouncil.com</div>
+                <div>Viewer: staff@bspagusancouncil.com</div>
+              </div>
+              <button type="submit" className="btn gold wide">Log in</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>;
+  }
 
   return <div className="app-shell">
     <header className="topbar">
       <div className="brand"><div className="brand-mark">BSP</div><div><b>AGUSAN COUNCIL</b><span>Registration Analytics & Reporting System</span></div></div>
       <div className="top-actions">
+        <span className="user-badge">{authUser.role === 'admin' ? 'Admin' : 'Viewer'} · {authUser.email}</span>
         <span className={`connection-pill ${connectionInfo.connected ? 'online' : 'offline'}`}>
           {connectionInfo.connected ? 'Supabase connected' : 'Local storage mode'}
         </span>
         <button className="btn light" onClick={backup}><Download size={16}/> Backup</button>
-        <label className="btn light file-button"><Upload size={16}/> Import<input type="file" accept=".json" onChange={importBackup}/></label>
+        {isAdmin && <label className="btn light file-button"><Upload size={16}/> Import<input type="file" accept=".json" onChange={importBackup}/></label>}
         <button className="btn gold" onClick={printPage}><Printer size={16}/> Print</button>
+        <button className="btn outline" onClick={handleLogout}>Log out</button>
         <button className="icon-button mobile-toggle" onClick={() => setMobileNav(!mobileNav)}>{mobileNav ? <X/> : <Menu/>}</button>
       </div>
     </header>
