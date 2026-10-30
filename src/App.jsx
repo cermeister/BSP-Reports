@@ -37,11 +37,11 @@ const fmt = n => new Intl.NumberFormat('en-PH').format(Number(n || 0));
 const scoutsOf = r => SECTIONS.reduce((sum, [key]) => sum + Number(r[key] || 0), 0);
 const totalsOf = records => records.reduce((a, r) => {
   SECTIONS.forEach(([key]) => a[key] += Number(r[key] || 0));
-  a.scouts += scoutsOf(r); a.leaders += Number(r.leaders || 0);
+  a.scouts += scoutsOf(r); a.leaders += Number(r.leaders || 0); a.heads += Number(r.heads || 0);
   a.entries += 1; a.paid += Number(r.paid || 0); a.male += Number(r.male || 0);
   a.female += Number(r.female || 0);
   return a;
-}, { scouts: 0, leaders: 0, entries: 0, paid: 0, male: 0, female: 0, kid: 0, kab: 0, boy: 0, senior: 0, rover: 0 });
+}, { scouts: 0, leaders: 0, heads: 0, entries: 0, paid: 0, male: 0, female: 0, kid: 0, kab: 0, boy: 0, senior: 0, rover: 0 });
 const load = () => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
@@ -72,7 +72,7 @@ export default function App() {
   const [form, setForm] = useState({
     division: DEFAULT_DIVISIONS[0], district: '', school: '', date: today(),
     receipt: '', aur: '', kid: 0, kab: 0, boy: 0, senior: 0, rover: 0,
-    male: 0, female: 0, leaders: 0, heads: 0, scoutFee: 0, leaderFee: 0,
+    male: 0, female: 0, leaders: 0, heads: 0, scoutFee: 0, leaderFee: 0, institutionFee: 0,
     paid: 0, paymentNotes: ''
   });
 
@@ -199,13 +199,15 @@ export default function App() {
 
   function setField(key, value) { setForm(prev => ({ ...prev, [key]: value })); }
   const formScouts = scoutsOf(form);
-  const expected = formScouts * Number(form.scoutFee || 0) + Number(form.leaders || 0) * Number(form.leaderFee || 0);
+  const expected = formScouts * Number(form.scoutFee || 0)
+    + Number(form.leaders || 0) * Number(form.leaderFee || 0)
+    + Number(form.heads || 0) * Number(form.institutionFee || 0);
 
   function resetForm() {
     setEditingId(null);
     setForm({ division: db.divisions[0] || '', district: '', school: '', date: today(), receipt: '', aur: '',
       kid: 0, kab: 0, boy: 0, senior: 0, rover: 0, male: 0, female: 0, leaders: 0, heads: 0,
-      scoutFee: 0, leaderFee: 0, paid: 0, paymentNotes: '' });
+      scoutFee: 0, leaderFee: 0, institutionFee: 0, paid: 0, paymentNotes: '' });
   }
   function saveRecord(e) {
     e.preventDefault();
@@ -275,7 +277,7 @@ export default function App() {
     reader.readAsText(file);
   }
   function exportCsv() {
-    const cols = ['date','division','district','school','kid','kab','boy','senior','rover','male','female','leaders','heads','receipt','aur','scoutFee','leaderFee','expected','paid','paymentNotes'];
+    const cols = ['date','division','district','school','kid','kab','boy','senior','rover','male','female','leaders','heads','receipt','aur','scoutFee','leaderFee','institutionFee','expected','paid','paymentNotes'];
     const csv = [cols.join(','), ...records.map(r => cols.map(k => `"${String(r[k] ?? '').replaceAll('"','""')}"`).join(','))].join('\n');
     download(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'BSP-Agusan-Registrations.csv');
   }
@@ -360,18 +362,19 @@ export default function App() {
               <Field label="Female Scouts (all sections)"><input type="number" min="0" value={form.female} onChange={e => setField('female',e.target.value)}/></Field>
               <Field label="Gender Count Check"><input readOnly value={Number(form.male)+Number(form.female) === formScouts ? 'Matched' : `Difference: ${Math.abs(formScouts-Number(form.male)-Number(form.female))}`}/></Field>
             </FormSection>
-            <FormSection title="3. Unit Leaders">
+            <FormSection title="3. Unit Leaders & Institutional Heads">
               <Field label="Number of Unit Leaders"><input type="number" min="0" value={form.leaders} onChange={e => setField('leaders',e.target.value)}/></Field>
-              <Field label="Institutional Heads (included in leader count)"><input type="number" min="0" value={form.heads} onChange={e => setField('heads',e.target.value)}/></Field>
+              <Field label="Number of Institutional Heads"><input type="number" min="0" value={form.heads} onChange={e => setField('heads',e.target.value)}/></Field>
             </FormSection>
             <FormSection title="4. Fees and Payment">
               <Field label="Fee per Scout (₱)"><input type="number" min="0" step="0.01" value={form.scoutFee} onChange={e => setField('scoutFee',e.target.value)}/></Field>
-              <Field label="Fee per Unit Leader / Institutional Head (₱)"><input type="number" min="0" step="0.01" value={form.leaderFee} onChange={e => setField('leaderFee',e.target.value)}/></Field>
+              <Field label="Fee per Unit Leader (₱)"><input type="number" min="0" step="0.01" value={form.leaderFee} onChange={e => setField('leaderFee',e.target.value)}/></Field>
+              <Field label="Fee per Institutional Head (₱)"><input type="number" min="0" step="0.01" value={form.institutionFee} onChange={e => setField('institutionFee',e.target.value)}/></Field>
               <Field label="Calculated Expected Amount (₱)"><input readOnly value={money(expected)}/></Field>
               <Field label="Actual Amount Paid (₱) *"><input required type="number" min="0" step="0.01" value={form.paid} onChange={e => setField('paid',e.target.value)}/></Field>
               <Field label="Payment Notes"><input value={form.paymentNotes} onChange={e => setField('paymentNotes',e.target.value)} placeholder="Optional notes"/></Field>
             </FormSection>
-            <p className="form-hint">Expected amount = (total scouts × fee per scout) + (Unit Leaders × leader fee). Actual amount paid is stored separately for partial payments or adjustments.</p>
+            <p className="form-hint">Expected amount = (total scouts × fee per scout) + (Unit Leaders × unit leader fee) + (Institutional Heads × institutional head fee). Actual amount paid is stored separately for partial payments or adjustments.</p>
             <div className="form-actions"><button className="btn gold" type="submit">Save Registration</button><button className="btn outline" type="button" onClick={() => {resetForm();setPage('registrations')}}>Cancel</button></div>
           </form>
         </section>}
