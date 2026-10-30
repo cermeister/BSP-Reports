@@ -63,8 +63,8 @@ export default function App() {
   const [db, setDb] = useState(load);
   const [page, setPage] = useState('dashboard');
   const [selectedDivision, setSelectedDivision] = useState(DEFAULT_DIVISIONS[0]);
-  const [year, setYear] = useState('all');
-  const [timeframe, setTimeframe] = useState('monthly');
+  const [year, setYear] = useState(new Date().getFullYear().toString());
+  const [selectedMonth, setSelectedMonth] = useState('to-date');
   const [query, setQuery] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
   const [editingId, setEditingId] = useState(null);
@@ -166,7 +166,18 @@ export default function App() {
 
   const records = db.records || [];
   const yearOptions = [...new Set([new Date().getFullYear(), ...records.map(r => Number((r.date || '').slice(0, 4))).filter(Boolean)])].sort((a,b) => b-a);
-  const dashboardRecords = records.filter(r => year === 'all' || (r.date || '').startsWith(year));
+  const monthOptions = ['all', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+  const currentMonth = new Date().getMonth() + 1;
+  const dashboardRecords = records.filter(r => {
+    if (year === 'all') return true;
+    if (!(r.date || '').startsWith(year)) return false;
+    if (selectedMonth === 'all') return true;
+    if (selectedMonth === 'to-date') {
+      const monthNumber = Number((r.date || '').slice(5, 7));
+      return monthNumber <= currentMonth;
+    }
+    return (r.date || '').slice(5, 7) === selectedMonth;
+  });
   const totals = totalsOf(dashboardRecords);
   const scoutByDivision = db.divisions.map(name => ({
     name: name.replace(' Division', ''),
@@ -181,8 +192,8 @@ export default function App() {
     { name: 'Male Scouts', value: totals.male },
     { name: 'Female Scouts', value: totals.female }
   ];
-  const trendData = useMemo(() => timeframe === 'weekly' ? weeklyData(dashboardRecords, 'scouts') : monthlyData(dashboardRecords, 'scouts'), [dashboardRecords, timeframe]);
-  const revenueData = useMemo(() => timeframe === 'weekly' ? weeklyData(dashboardRecords, 'paid') : monthlyData(dashboardRecords, 'paid'), [dashboardRecords, timeframe]);
+  const trendData = useMemo(() => monthlyData(dashboardRecords, 'scouts'), [dashboardRecords]);
+  const revenueData = useMemo(() => monthlyData(dashboardRecords, 'paid'), [dashboardRecords]);
   const districtNames = [...new Set([
     ...(db.districts[selectedDivision] || []),
     ...dashboardRecords.filter(r => r.division === selectedDivision).map(r => r.district).filter(Boolean)
@@ -336,7 +347,7 @@ export default function App() {
       </aside>
       <main className="content">
         {page === 'dashboard' && <section className="page">
-          <div className="page-heading"><div><h1>Council Overview</h1><p>Registration performance, membership distribution, and collections.</p></div><div className="header-controls"><select className="control" value={timeframe} onChange={e => setTimeframe(e.target.value)}><option value="monthly">Monthly</option><option value="weekly">Weekly</option></select><select className="control year-select" value={year} onChange={e => setYear(e.target.value)}><option value="all">All years</option>{yearOptions.map(y => <option key={y}>{y}</option>)}</select></div></div>
+          <div className="page-heading"><div><h1>Council Overview</h1><p>Registration performance, membership distribution, and collections.</p></div><div className="header-controls"><select className="control year-select" value={year} onChange={e => { setYear(e.target.value); if (e.target.value === 'all') setSelectedMonth('all'); else setSelectedMonth('to-date'); }}><option value="all">All years</option>{yearOptions.map(y => <option key={y}>{y}</option>)}</select><select className="control" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} disabled={year === 'all'}><option value="all">All months</option><option value="to-date">From January to current month</option>{monthOptions.filter(m => m !== 'all').map(month => <option key={month} value={month}>{new Date(`${year}-${month}-01`).toLocaleDateString('en-PH', { month: 'long' })}</option>)}</select></div></div>
           <div className="metric-grid">
             <Metric label="Total Registered Scouts" value={fmt(totals.scouts)} note="Across selected period" icon={Users}/>
             <Metric label="Unit Leaders" value={fmt(totals.leaders)} note="Registered leaders" icon={UserRound}/>
@@ -352,8 +363,8 @@ export default function App() {
             <Panel title="Scout Registration Breakdown" subtitle="Council-wide totals by section"><div className="chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={sectionData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis allowDecimals={false}/><Tooltip formatter={v => fmt(v)}/><Bar dataKey="total" radius={[5,5,0,0]}>{sectionData.map((entry, index) => <Cell key={entry.name} fill={SECTION_COLOR_LIST[index] || '#174a78'} />)}</Bar></BarChart></ResponsiveContainer></div></Panel>
           </div>
           <div className="two-col">
-            <Panel title={`Registration Trend (${timeframe === 'weekly' ? 'Weekly' : 'Monthly'})`} subtitle={timeframe === 'weekly' ? 'Scouts registered per week' : 'Scouts registered per month'}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="scouts" stroke="#174a78" strokeWidth={3} dot={{fill:'#e4ad37',r:4}}/></LineChart></ResponsiveContainer></div></Panel>
-            <Panel title={`${timeframe === 'weekly' ? 'Weekly' : 'Monthly'} Collections`} subtitle={timeframe === 'weekly' ? 'Recorded payments by week' : 'Recorded payments by registration month'}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={revenueData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis/><Tooltip formatter={v => money(v)}/><Bar dataKey="collections" fill="#26936d" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div></Panel>
+            <Panel title="Registration Trend" subtitle={selectedMonth === 'all' ? 'Scouts registered by month' : selectedMonth === 'to-date' ? `Scouts registered from January to ${new Date(`${year}-${String(currentMonth).padStart(2,'0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}` : `Scouts registered in ${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="scouts" stroke="#174a78" strokeWidth={3} dot={{fill:'#e4ad37',r:4}}/></LineChart></ResponsiveContainer></div></Panel>
+            <Panel title="Monthly Collections" subtitle={selectedMonth === 'all' ? 'Recorded payments by month' : selectedMonth === 'to-date' ? `Payments recorded from January to ${new Date(`${year}-${String(currentMonth).padStart(2,'0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}` : `Payments recorded in ${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={revenueData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis/><Tooltip formatter={v => money(v)}/><Bar dataKey="collections" fill="#26936d" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div></Panel>
           </div>
           <Panel title="Division Drill-down" subtitle="Select a division to view district-level scout and leader distribution.">
             <div className="chip-row">{db.divisions.map(d => <button key={d} className={`chip ${selectedDivision === d ? 'selected' : ''}`} onClick={() => setSelectedDivision(d)}>{d}</button>)}</div>
