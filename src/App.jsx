@@ -435,7 +435,7 @@ export default function App() {
                 <strong>Approved accounts</strong>
                 <div>Admin: christian@bspagusancouncil.com</div>
                 <div>Viewer: staff@bspagusancouncil.com</div>
-                <div>Password: Mabuhayscouts!2026</div>
+                <div>Contact Christian Cervante for access</div>
               </div>
               <button type="submit" className="btn gold wide">Log in</button>
             </form>
