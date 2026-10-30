@@ -407,7 +407,7 @@ export default function App() {
     return <div className="auth-shell">
       <div className="auth-layout">
         <div className="auth-visual">
-          <div className="auth-brand"><div className="brand-mark large">BSP</div><div><b>AGUSAN COUNCIL</b><span>Registration Analytics & Reporting System</span></div></div>
+          <div className="auth-brand"><img src="/bspaclogo.png" alt="BSP Agusan Council logo" className="brand-logo" /><div><b>AGUSAN COUNCIL</b><span>Registration Analytics & Reporting System</span></div></div>
           <div className="auth-card">
             <h2>Scouts by Division</h2>
             <p>Interactive council overview preview</p>
