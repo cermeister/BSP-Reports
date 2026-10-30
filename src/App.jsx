@@ -20,6 +20,14 @@ const SECTIONS = [
   ['senior', 'Senior Scouts'], ['rover', 'Rover Scouts']
 ];
 const COLORS = ['#174a78', '#e4ad37', '#26936d', '#8a6bb1', '#df7954', '#4b9eae', '#8796a8'];
+const SECTION_COLORS = {
+  'Kid Scouts': '#cfe7f6',
+  'Kab Scouts': '#f5c94c',
+  'Boy Scouts': '#2c9a6f',
+  'Senior Scouts': '#d34b4b',
+  'Rover Scouts': '#123a5a'
+};
+const SECTION_COLOR_LIST = ['#cfe7f6', '#f5c94c', '#2c9a6f', '#d34b4b', '#123a5a'];
 const STORAGE_KEY = 'bspAgusanReact';
 const EMPTY = { divisions: DEFAULT_DIVISIONS, districts: {}, schools: {}, records: [] };
 const unique = values => [...new Set((values || []).filter(Boolean))];
@@ -167,7 +175,7 @@ export default function App() {
     name: name.replace(' Division', ''),
     value: dashboardRecords.filter(r => r.division === name).reduce((s, r) => s + Number(r.leaders || 0), 0)
   }));
-  const sectionData = SECTIONS.map(([key, label]) => ({ name: label, total: totals[key] }));
+  const sectionData = SECTIONS.map(([key, label]) => ({ name: label, total: totals[key], color: SECTION_COLORS[label] || '#174a78' }));
   const trendData = useMemo(() => monthlyData(dashboardRecords, 'scouts'), [dashboardRecords]);
   const revenueData = useMemo(() => monthlyData(dashboardRecords, 'paid'), [dashboardRecords]);
   const districtNames = [...new Set([
@@ -323,7 +331,7 @@ export default function App() {
             <Panel title="Scouts by Division" subtitle="Share of registered scouts"><ChartPie data={scoutByDivision}/></Panel>
             <Panel title="Unit Leaders by Division" subtitle="Share of registered Unit Leaders"><ChartPie data={leadersByDivision}/></Panel>
           </div>
-          <Panel title="Scout Registration Breakdown" subtitle="Council-wide totals by section"><div className="chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={sectionData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis allowDecimals={false}/><Tooltip formatter={v => fmt(v)}/><Bar dataKey="total" fill="#174a78" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div></Panel>
+          <Panel title="Scout Registration Breakdown" subtitle="Council-wide totals by section"><div className="chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={sectionData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis allowDecimals={false}/><Tooltip formatter={v => fmt(v)}/><Bar dataKey="total" radius={[5,5,0,0]}>{sectionData.map((entry, index) => <Cell key={entry.name} fill={SECTION_COLOR_LIST[index] || '#174a78'} />)}</Bar></BarChart></ResponsiveContainer></div></Panel>
           <div className="two-col">
             <Panel title="Registration Trend" subtitle="Scouts registered per month"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="month" tick={{fontSize:10}}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="scouts" stroke="#174a78" strokeWidth={3} dot={{fill:'#e4ad37',r:4}}/></LineChart></ResponsiveContainer></div></Panel>
             <Panel title="Monthly Collections" subtitle="Recorded payments by registration month"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={revenueData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="month" tick={{fontSize:10}}/><YAxis/><Tooltip formatter={v => money(v)}/><Bar dataKey="collections" fill="#26936d" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div></Panel>
@@ -411,7 +419,7 @@ function monthlyData(records, field) {
 function ChartPie({ data }) {
   const hasData = data.some(x => x.value > 0);
   if (!hasData) return <EmptyChart/>;
-  return <div className="pie-layout"><div className="pie-chart"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data.filter(x => x.value > 0)} dataKey="value" nameKey="name" innerRadius={54} outerRadius={88} paddingAngle={2}>{data.filter(x => x.value > 0).map((x,i) => <Cell key={x.name} fill={COLORS[i % COLORS.length]}/>)}</Pie><Tooltip formatter={v => fmt(v)}/></PieChart></ResponsiveContainer></div><div className="pie-legend">{data.filter(x => x.value > 0).map((x,i) => <div key={x.name}><i style={{background:COLORS[i % COLORS.length]}}/><span>{x.name}</span><b>{fmt(x.value)}</b></div>)}</div></div>;
+  return <div className="pie-layout"><div className="pie-chart"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data.filter(x => x.value > 0)} dataKey="value" nameKey="name" innerRadius={54} outerRadius={88} paddingAngle={2}>{data.filter(x => x.value > 0).map((x,i) => <Cell key={x.name} fill={SECTION_COLORS[x.name] || COLORS[i % COLORS.length]}/>)}</Pie><Tooltip formatter={v => fmt(v)}/></PieChart></ResponsiveContainer></div><div className="pie-legend">{data.filter(x => x.value > 0).map((x,i) => <div key={x.name}><i style={{background:SECTION_COLORS[x.name] || COLORS[i % COLORS.length]}}/><span>{x.name}</span><b>{fmt(x.value)}</b></div>)}</div></div>;
 }
 function FormSection({ title, children }) { return <div className="form-section"><h3>{title}</h3><div className="form-grid">{children}</div></div>; }
 function Field({ label, children }) { return <label className="field"><span>{label}</span>{children}</label>; }
