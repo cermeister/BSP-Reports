@@ -21,7 +21,8 @@ const SECTIONS = [
 ];
 const COLORS = ['#174a78', '#e4ad37', '#26936d', '#8a6bb1', '#df7954', '#4b9eae', '#8796a8'];
 const STORAGE_KEY = 'bspAgusanReact';
-const EMPTY = { divisions: DEFAULT_DIVISIONS, districts: {}, records: [] };
+const EMPTY = { divisions: DEFAULT_DIVISIONS, districts: {}, schools: {}, records: [] };
+const unique = values => [...new Set((values || []).filter(Boolean))];
 const today = () => new Date().toISOString().slice(0, 10);
 const money = n => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(n || 0));
 const fmt = n => new Intl.NumberFormat('en-PH').format(Number(n || 0));
@@ -87,8 +88,33 @@ export default function App() {
       }
 
       if (data?.payload && Array.isArray(data.payload.records)) {
-        setDb({ ...EMPTY, ...data.payload });
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.payload));
+        const nextState = { ...EMPTY, ...data.payload, schools: data.payload.schools || {} };
+        setDb(nextState);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+        return;
+      }
+
+      const [divisionResult, districtResult, schoolResult] = await Promise.all([
+        supabase.from('divisions').select('name').order('name'),
+        supabase.from('districts').select('division_name, name').order('division_name, name'),
+        supabase.from('schools').select('division_name, district_name, name').order('division_name, district_name, name')
+      ]);
+
+      if (!isMounted) return;
+
+      if (!divisionResult.error && divisionResult.data) {
+        const divisions = divisionResult.data.map(row => row.name);
+        const districts = {};
+        (districtResult.data || []).forEach(row => {
+          districts[row.division_name] = [...new Set([...(districts[row.division_name] || []), row.name])];
+        });
+        const schools = {};
+        (schoolResult.data || []).forEach(row => {
+          schools[row.division_name] ||= {};
+          schools[row.division_name][row.district_name] = [...new Set([...(schools[row.division_name][row.district_name] || []), row.name])];
+        });
+
+        setDb(prev => ({ ...prev, divisions, districts, schools }));
       }
     };
 
@@ -100,23 +126,33 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (supabase) {
-      supabase.from('bsp_app_state').upsert({ id: 'app-data', payload: db }, { onConflict: 'id' })
-        .then(({ error }) => {
-          if (error) {
-            console.warn('Supabase save failed:', error.message);
-            setConnectionInfo({ ...getSupabaseConfig(), connected: false, error: error.message });
-          } else {
-            setConnectionInfo(getSupabaseConfig());
+    const persist = async () => {
+      if (supabase) {
+        try {
+          const tables = await Promise.all([
+            supabase.from('divisions').upsert((db.divisions || []).map(name => ({ name })), { onConflict: 'name' }),
+            supabase.from('districts').upsert(Object.entries(db.districts || {}).flatMap(([division, names]) => (names || []).map(name => ({ division_name: division, name }))), { onConflict: 'division_name,name' }),
+            supabase.from('schools').upsert(Object.entries(db.schools || {}).flatMap(([division, districtMap]) => Object.entries(districtMap || {}).flatMap(([district, names]) => (names || []).map(name => ({ division_name: division, district_name: district, name })))), { onConflict: 'division_name,district_name,name' })
+          ]);
+
+          const tableError = tables.find(result => result?.error);
+          if (tableError) {
+            throw tableError.error;
           }
-        })
-        .catch((error) => {
+
+          const { error } = await supabase.from('bsp_app_state').upsert({ id: 'app-data', payload: db }, { onConflict: 'id' });
+          if (error) throw error;
+          setConnectionInfo(getSupabaseConfig());
+        } catch (error) {
           console.warn('Supabase save error:', error);
           setConnectionInfo({ ...getSupabaseConfig(), connected: false, error: error.message });
-        });
-    }
+        }
+      }
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+    };
+
+    persist();
   }, [db]);
 
   const records = db.records || [];
@@ -138,6 +174,14 @@ export default function App() {
     ...(db.districts[selectedDivision] || []),
     ...dashboardRecords.filter(r => r.division === selectedDivision).map(r => r.district).filter(Boolean)
   ])];
+  const districtOptions = unique([
+    ...(db.districts[form.division] || []),
+    ...records.filter(r => r.division === form.division).map(r => r.district)
+  ]);
+  const schoolOptions = unique([
+    ...(db.schools?.[form.division]?.[form.district] || []),
+    ...records.filter(r => r.division === form.division && r.district === form.district).map(r => r.school)
+  ]);
   const districtScouts = districtNames.map(name => ({
     name, value: dashboardRecords.filter(r => r.division === selectedDivision && r.district === name).reduce((s,r) => s + scoutsOf(r), 0)
   }));
@@ -163,8 +207,12 @@ export default function App() {
     setDb(prev => {
       const exists = prev.records.some(r => r.id === record.id);
       const nextRecords = exists ? prev.records.map(r => r.id === record.id ? record : r) : [...prev.records, record];
-      const districts = { ...prev.districts, [record.division]: [...new Set([...(prev.districts[record.division] || []), record.district].filter(Boolean))] };
-      return { ...prev, records: nextRecords, districts };
+      const normalizedDistrict = String(record.district || '').trim();
+      const normalizedSchool = String(record.school || '').trim();
+      const districts = { ...prev.districts, [record.division]: unique([...(prev.districts[record.division] || []), normalizedDistrict]) };
+      const divisionSchools = { ...(prev.schools?.[record.division] || {}) };
+      divisionSchools[normalizedDistrict] = unique([...(divisionSchools[normalizedDistrict] || []), normalizedSchool]);
+      return { ...prev, records: nextRecords, districts, schools: { ...prev.schools, [record.division]: divisionSchools } };
     });
     resetForm(); setPage('registrations');
   }
@@ -185,7 +233,21 @@ export default function App() {
     if (!division || !db.divisions.includes(division)) return window.alert('Please enter an existing division name.');
     const district = window.prompt(`Enter a district under ${division}:`)?.trim();
     if (!district) return;
-    setDb(prev => ({ ...prev, districts: { ...prev.districts, [division]: [...new Set([...(prev.districts[division] || []), district])] } }));
+    setDb(prev => ({ ...prev, districts: { ...prev.districts, [division]: unique([...(prev.districts[division] || []), district]) } }));
+  }
+  function addSchool() {
+    const division = window.prompt('Enter the division name exactly as listed:\n' + db.divisions.join('\n'))?.trim();
+    if (!division || !db.divisions.includes(division)) return window.alert('Please enter an existing division name.');
+    const district = window.prompt(`Enter the district under ${division}:`)?.trim();
+    if (!district) return;
+    const school = window.prompt(`Enter the school name under ${division} / ${district}:`)?.trim();
+    if (!school) return;
+    setDb(prev => {
+      const districts = { ...prev.districts, [division]: unique([...(prev.districts[division] || []), district]) };
+      const divisionSchools = { ...(prev.schools?.[division] || {}) };
+      divisionSchools[district] = unique([...(divisionSchools[district] || []), school]);
+      return { ...prev, districts, schools: { ...prev.schools, [division]: divisionSchools } };
+    });
   }
   function backup() {
     const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
@@ -277,8 +339,8 @@ export default function App() {
           <form className="form-panel" onSubmit={saveRecord}>
             <FormSection title="1. Registration Information">
               <Field label="Division *"><select required value={form.division} onChange={e => setField('division',e.target.value)}>{db.divisions.map(d => <option key={d}>{d}</option>)}</select></Field>
-              <Field label="District *"><input required list="district-list" value={form.district} onChange={e => setField('district',e.target.value)} placeholder="Enter or select district"/><datalist id="district-list">{(db.districts[form.division] || []).map(d => <option key={d} value={d}/>)}</datalist></Field>
-              <Field label="School / Institution *"><input required value={form.school} onChange={e => setField('school',e.target.value)} placeholder="School name"/></Field>
+              <Field label="District *"><input required list="district-list" value={form.district} onChange={e => setField('district',e.target.value)} placeholder="Enter or select district"/><datalist id="district-list">{districtOptions.map(d => <option key={d} value={d}/>)}</datalist></Field>
+              <Field label="School / Institution *"><input required list="school-list" value={form.school} onChange={e => setField('school',e.target.value)} placeholder="School name"/><datalist id="school-list">{schoolOptions.map(s => <option key={s} value={s}/>)}</datalist></Field>
               <Field label="Registration Date *"><input required type="date" value={form.date} onChange={e => setField('date',e.target.value)}/></Field>
               <Field label="Invoice Number / Receipt No. *"><input required value={form.receipt} onChange={e => setField('receipt',e.target.value)} placeholder="e.g. OR-000123"/></Field>
               <Field label="AUR Number (Optional)"><input value={form.aur} onChange={e => setField('aur',e.target.value)} placeholder="Enter AUR number"/></Field>
@@ -325,8 +387,8 @@ export default function App() {
 
         {page === 'settings' && <section className="page">
           <div className="page-heading"><div><h1>Divisions & Districts</h1><p>Manage organizational categories used in registration forms.</p></div></div>
-          <div className="two-col"><Panel title="Add Division" subtitle="Create an additional division."><button className="btn gold" onClick={addDivision}><PlusCircle size={16}/> Add Division</button></Panel><Panel title="Add District" subtitle="Add a district under a selected division."><button className="btn gold" onClick={addDistrict}><PlusCircle size={16}/> Add District</button></Panel></div>
-          <Panel title="Current Divisions and Districts">{db.divisions.map(d => <div className="division-row" key={d}><b>{d}</b><span>{(db.districts[d] || []).length ? db.districts[d].join(' · ') : 'No districts added yet'}</span></div>)}</Panel>
+          <div className="two-col"><Panel title="Add Division" subtitle="Create an additional division."><button className="btn gold" onClick={addDivision}><PlusCircle size={16}/> Add Division</button></Panel><Panel title="Add District" subtitle="Add a district under a selected division."><button className="btn gold" onClick={addDistrict}><PlusCircle size={16}/> Add District</button></Panel><Panel title="Add School" subtitle="Add a school under a division and district."><button className="btn gold" onClick={addSchool}><PlusCircle size={16}/> Add School</button></Panel></div>
+          <Panel title="Current Divisions and Districts">{db.divisions.map(d => <div className="division-row" key={d}><b>{d}</b><span>{(db.districts[d] || []).length ? db.districts[d].join(' · ') : 'No districts added yet'}</span>{db.schools?.[d] && Object.entries(db.schools[d]).length ? <div className="school-list"><small>Schools:</small> {Object.entries(db.schools[d]).map(([district, schools]) => <div key={`${d}-${district}`}><strong>{district}:</strong> {schools.join(' · ')}</div>)}</div> : <div className="school-list"><small>No schools added yet.</small></div>}</div>)}</Panel>
         </section>}
         <footer className="footer">BSP Agusan Council · Registration Analytics System <span>Prototype v1.0</span></footer>
       </main>
