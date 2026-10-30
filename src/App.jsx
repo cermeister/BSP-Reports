@@ -64,6 +64,7 @@ export default function App() {
   const [page, setPage] = useState('dashboard');
   const [selectedDivision, setSelectedDivision] = useState(DEFAULT_DIVISIONS[0]);
   const [year, setYear] = useState('all');
+  const [timeframe, setTimeframe] = useState('monthly');
   const [query, setQuery] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
   const [editingId, setEditingId] = useState(null);
@@ -180,8 +181,8 @@ export default function App() {
     { name: 'Male Scouts', value: totals.male },
     { name: 'Female Scouts', value: totals.female }
   ];
-  const trendData = useMemo(() => monthlyData(dashboardRecords, 'scouts'), [dashboardRecords]);
-  const revenueData = useMemo(() => monthlyData(dashboardRecords, 'paid'), [dashboardRecords]);
+  const trendData = useMemo(() => timeframe === 'weekly' ? weeklyData(dashboardRecords, 'scouts') : monthlyData(dashboardRecords, 'scouts'), [dashboardRecords, timeframe]);
+  const revenueData = useMemo(() => timeframe === 'weekly' ? weeklyData(dashboardRecords, 'paid') : monthlyData(dashboardRecords, 'paid'), [dashboardRecords, timeframe]);
   const districtNames = [...new Set([
     ...(db.districts[selectedDivision] || []),
     ...dashboardRecords.filter(r => r.division === selectedDivision).map(r => r.district).filter(Boolean)
@@ -291,10 +292,19 @@ export default function App() {
   }
   function printPage() { window.print(); }
 
+  const invoiceNumberValue = value => {
+    const match = String(value || '').match(/\d+/g);
+    return match ? Number(match.join('')) : Number.MAX_SAFE_INTEGER;
+  };
+
   const filteredRecords = records.filter(r =>
     (!divisionFilter || r.division === divisionFilter) &&
     [r.school, r.district, r.receipt, r.aur, r.division].join(' ').toLowerCase().includes(query.toLowerCase())
-  ).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  ).sort((a,b) => {
+    const invoiceDiff = invoiceNumberValue(a.receipt) - invoiceNumberValue(b.receipt);
+    if (invoiceDiff !== 0) return invoiceDiff;
+    return (b.date || '').localeCompare(a.date || '');
+  });
 
   const navItems = [
     ['dashboard', 'Dashboard', LayoutDashboard],
@@ -326,7 +336,7 @@ export default function App() {
       </aside>
       <main className="content">
         {page === 'dashboard' && <section className="page">
-          <div className="page-heading"><div><h1>Council Overview</h1><p>Registration performance, membership distribution, and collections.</p></div><select className="control year-select" value={year} onChange={e => setYear(e.target.value)}><option value="all">All years</option>{yearOptions.map(y => <option key={y}>{y}</option>)}</select></div>
+          <div className="page-heading"><div><h1>Council Overview</h1><p>Registration performance, membership distribution, and collections.</p></div><div className="header-controls"><select className="control" value={timeframe} onChange={e => setTimeframe(e.target.value)}><option value="monthly">Monthly</option><option value="weekly">Weekly</option></select><select className="control year-select" value={year} onChange={e => setYear(e.target.value)}><option value="all">All years</option>{yearOptions.map(y => <option key={y}>{y}</option>)}</select></div></div>
           <div className="metric-grid">
             <Metric label="Total Registered Scouts" value={fmt(totals.scouts)} note="Across selected period" icon={Users}/>
             <Metric label="Unit Leaders" value={fmt(totals.leaders)} note="Registered leaders" icon={UserRound}/>
@@ -342,8 +352,8 @@ export default function App() {
             <Panel title="Scout Registration Breakdown" subtitle="Council-wide totals by section"><div className="chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={sectionData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis allowDecimals={false}/><Tooltip formatter={v => fmt(v)}/><Bar dataKey="total" radius={[5,5,0,0]}>{sectionData.map((entry, index) => <Cell key={entry.name} fill={SECTION_COLOR_LIST[index] || '#174a78'} />)}</Bar></BarChart></ResponsiveContainer></div></Panel>
           </div>
           <div className="two-col">
-            <Panel title="Registration Trend" subtitle="Scouts registered per month"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="month" tick={{fontSize:10}}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="scouts" stroke="#174a78" strokeWidth={3} dot={{fill:'#e4ad37',r:4}}/></LineChart></ResponsiveContainer></div></Panel>
-            <Panel title="Monthly Collections" subtitle="Recorded payments by registration month"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={revenueData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="month" tick={{fontSize:10}}/><YAxis/><Tooltip formatter={v => money(v)}/><Bar dataKey="collections" fill="#26936d" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div></Panel>
+            <Panel title={`Registration Trend (${timeframe === 'weekly' ? 'Weekly' : 'Monthly'})`} subtitle={timeframe === 'weekly' ? 'Scouts registered per week' : 'Scouts registered per month'}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="scouts" stroke="#174a78" strokeWidth={3} dot={{fill:'#e4ad37',r:4}}/></LineChart></ResponsiveContainer></div></Panel>
+            <Panel title={`${timeframe === 'weekly' ? 'Weekly' : 'Monthly'} Collections`} subtitle={timeframe === 'weekly' ? 'Recorded payments by week' : 'Recorded payments by registration month'}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={revenueData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis/><Tooltip formatter={v => money(v)}/><Bar dataKey="collections" fill="#26936d" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div></Panel>
           </div>
           <Panel title="Division Drill-down" subtitle="Select a division to view district-level scout and leader distribution.">
             <div className="chip-row">{db.divisions.map(d => <button key={d} className={`chip ${selectedDivision === d ? 'selected' : ''}`} onClick={() => setSelectedDivision(d)}>{d}</button>)}</div>
@@ -422,7 +432,23 @@ function monthlyData(records, field) {
     map[key] += field === 'scouts' ? scoutsOf(r) : Number(r[field] || 0);
   });
   return Object.entries(map).sort(([a],[b]) => a.localeCompare(b)).map(([key,value]) => ({
-    month: new Date(`${key}-02`).toLocaleDateString('en-PH',{month:'short',year:'2-digit'}),
+    period: new Date(`${key}-02`).toLocaleDateString('en-PH',{month:'short',year:'2-digit'}),
+    [field === 'scouts' ? 'scouts' : 'collections']: value
+  }));
+}
+function weeklyData(records, field) {
+  const map = {};
+  records.forEach(r => {
+    if (!r.date) return;
+    const date = new Date(r.date);
+    const weekStart = new Date(date);
+    weekStart.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+    const key = weekStart.toISOString().slice(0,10);
+    map[key] ||= 0;
+    map[key] += field === 'scouts' ? scoutsOf(r) : Number(r[field] || 0);
+  });
+  return Object.entries(map).sort(([a],[b]) => a.localeCompare(b)).map(([key,value]) => ({
+    period: new Date(`${key}T00:00:00`).toLocaleDateString('en-PH',{month:'short',day:'numeric'}),
     [field === 'scouts' ? 'scouts' : 'collections']: value
   }));
 }
