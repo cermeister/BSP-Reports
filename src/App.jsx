@@ -407,7 +407,7 @@ export default function App() {
     return <div className="auth-shell">
       <div className="auth-layout">
         <div className="auth-visual">
-          <div className="auth-brand"><img src="/bspaclogo.png" alt="BSP Agusan Council logo" className="brand-logo" /><div><b>AGUSAN COUNCIL</b><span>Registration Analytics & Reporting System</span></div></div>
+          <div className="auth-brand"><div className="auth-logo-wrap"><img src="/bspaclogo.png" alt="BSP Agusan Council logo" className="brand-logo" /></div><div className="auth-brand-copy"><b>AGUSAN COUNCIL</b><span>Registration Analytics & Reporting System</span></div></div>
           <div className="auth-card">
             <h2>Scouts by Division</h2>
             <p>Interactive council overview preview</p>
@@ -445,7 +445,7 @@ export default function App() {
 
   return <div className="app-shell">
     <header className="topbar">
-      <div className="brand"><div className="brand-mark">BSP</div><div><b>AGUSAN COUNCIL</b><span>Registration Analytics & Reporting System</span></div></div>
+      <div className="brand"><div className="brand-mark logo-badge"><img src="/bspaclogo.png" alt="BSP Agusan Council logo" className="brand-logo" /></div><div><b>AGUSAN COUNCIL</b><span>Registration Analytics & Reporting System</span></div></div>
       <div className="top-actions">
         <span className="user-badge">{authUser.role === 'admin' ? 'Admin' : 'Viewer'} · {authUser.email}</span>
         <span className={`connection-pill ${connectionInfo.connected ? 'online' : 'offline'}`}>
