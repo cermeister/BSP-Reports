@@ -8,6 +8,7 @@ import {
   Download, Upload, Printer, Search, Pencil, Trash2, Users, UserRound,
   School, PhilippinePeso, Menu, X
 } from 'lucide-react';
+import { supabase, getSupabaseConfig } from './lib/supabase';
 
 const DEFAULT_DIVISIONS = [
   'Butuan City Division',
@@ -19,6 +20,7 @@ const SECTIONS = [
   ['senior', 'Senior Scouts'], ['rover', 'Rover Scouts']
 ];
 const COLORS = ['#174a78', '#e4ad37', '#26936d', '#8a6bb1', '#df7954', '#4b9eae', '#8796a8'];
+const STORAGE_KEY = 'bspAgusanReact';
 const EMPTY = { divisions: DEFAULT_DIVISIONS, districts: {}, records: [] };
 const today = () => new Date().toISOString().slice(0, 10);
 const money = n => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(n || 0));
@@ -32,8 +34,12 @@ const totalsOf = records => records.reduce((a, r) => {
   return a;
 }, { scouts: 0, leaders: 0, entries: 0, paid: 0, male: 0, female: 0, kid: 0, kab: 0, boy: 0, senior: 0, rover: 0 });
 const load = () => {
-  try { return { ...EMPTY, ...JSON.parse(localStorage.getItem('bspAgusanReact') || '{}') }; }
-  catch { return EMPTY; }
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    return { ...EMPTY, ...saved };
+  } catch {
+    return EMPTY;
+  }
 };
 
 function Metric({ label, value, note, icon: Icon }) {
@@ -53,6 +59,7 @@ export default function App() {
   const [divisionFilter, setDivisionFilter] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [mobileNav, setMobileNav] = useState(false);
+  const [connectionInfo, setConnectionInfo] = useState(getSupabaseConfig());
   const [form, setForm] = useState({
     division: DEFAULT_DIVISIONS[0], district: '', school: '', date: today(),
     receipt: '', aur: '', kid: 0, kab: 0, boy: 0, senior: 0, rover: 0,
@@ -60,7 +67,57 @@ export default function App() {
     paid: 0, paymentNotes: ''
   });
 
-  useEffect(() => localStorage.setItem('bspAgusanReact', JSON.stringify(db)), [db]);
+  useEffect(() => {
+    if (!supabase) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+      setConnectionInfo(getSupabaseConfig());
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadRemote = async () => {
+      const { data, error } = await supabase.from('bsp_app_state').select('payload').eq('id', 'app-data').maybeSingle();
+      if (!isMounted) return;
+
+      if (error) {
+        console.warn('Supabase load failed:', error.message);
+        setConnectionInfo({ ...getSupabaseConfig(), connected: false, error: error.message });
+        return;
+      }
+
+      if (data?.payload && Array.isArray(data.payload.records)) {
+        setDb({ ...EMPTY, ...data.payload });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.payload));
+      }
+    };
+
+    loadRemote();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (supabase) {
+      supabase.from('bsp_app_state').upsert({ id: 'app-data', payload: db }, { onConflict: 'id' })
+        .then(({ error }) => {
+          if (error) {
+            console.warn('Supabase save failed:', error.message);
+            setConnectionInfo({ ...getSupabaseConfig(), connected: false, error: error.message });
+          } else {
+            setConnectionInfo(getSupabaseConfig());
+          }
+        })
+        .catch((error) => {
+          console.warn('Supabase save error:', error);
+          setConnectionInfo({ ...getSupabaseConfig(), connected: false, error: error.message });
+        });
+    }
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  }, [db]);
 
   const records = db.records || [];
   const yearOptions = [...new Set([new Date().getFullYear(), ...records.map(r => Number((r.date || '').slice(0, 4))).filter(Boolean)])].sort((a,b) => b-a);
@@ -176,6 +233,9 @@ export default function App() {
     <header className="topbar">
       <div className="brand"><div className="brand-mark">BSP</div><div><b>AGUSAN COUNCIL</b><span>Registration Analytics & Reporting System</span></div></div>
       <div className="top-actions">
+        <span className={`connection-pill ${connectionInfo.connected ? 'online' : 'offline'}`}>
+          {connectionInfo.connected ? 'Supabase connected' : 'Local storage mode'}
+        </span>
         <button className="btn light" onClick={backup}><Download size={16}/> Backup</button>
         <label className="btn light file-button"><Upload size={16}/> Import<input type="file" accept=".json" onChange={importBackup}/></label>
         <button className="btn gold" onClick={printPage}><Printer size={16}/> Print</button>
