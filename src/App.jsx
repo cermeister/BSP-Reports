@@ -85,6 +85,7 @@ export default function App() {
   const [divisionFilter, setDivisionFilter] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [mobileNav, setMobileNav] = useState(false);
+  const [chartDetail, setChartDetail] = useState(null);
   const [connectionInfo, setConnectionInfo] = useState(getSupabaseConfig());
   const [form, setForm] = useState({
     division: DEFAULT_DIVISIONS[0], district: '', school: '', date: today(),
@@ -205,18 +206,31 @@ export default function App() {
     return (r.date || '').slice(5, 7) === selectedMonth;
   });
   const totals = totalsOf(dashboardRecords);
-  const scoutByDivision = db.divisions.map(name => ({
-    name: name.replace(' Division', ''),
-    value: dashboardRecords.filter(r => r.division === name).reduce((s, r) => s + scoutsOf(r), 0)
+  const scoutByDivision = db.divisions.map(name => {
+    const recordsForDivision = dashboardRecords.filter(r => r.division === name);
+    return {
+      name: name.replace(' Division', ''),
+      value: recordsForDivision.reduce((s, r) => s + scoutsOf(r), 0),
+      records: recordsForDivision
+    };
+  });
+  const leadersByDivision = db.divisions.map(name => {
+    const recordsForDivision = dashboardRecords.filter(r => r.division === name);
+    return {
+      name: name.replace(' Division', ''),
+      value: recordsForDivision.reduce((s, r) => s + Number(r.leaders || 0), 0),
+      records: recordsForDivision
+    };
+  });
+  const sectionData = SECTIONS.map(([key, label]) => ({
+    name: label,
+    total: totals[key],
+    color: SECTION_COLORS[label] || '#174a78',
+    records: dashboardRecords.filter(r => Number(r[key] || 0) > 0)
   }));
-  const leadersByDivision = db.divisions.map(name => ({
-    name: name.replace(' Division', ''),
-    value: dashboardRecords.filter(r => r.division === name).reduce((s, r) => s + Number(r.leaders || 0), 0)
-  }));
-  const sectionData = SECTIONS.map(([key, label]) => ({ name: label, total: totals[key], color: SECTION_COLORS[label] || '#174a78' }));
   const genderData = [
-    { name: 'Male Scouts', value: totals.male },
-    { name: 'Female Scouts', value: totals.female }
+    { name: 'Male Scouts', value: totals.male, records: dashboardRecords.filter(r => Number(r.male || 0) > 0) },
+    { name: 'Female Scouts', value: totals.female, records: dashboardRecords.filter(r => Number(r.female || 0) > 0) }
   ];
   const trendData = useMemo(() => monthlyData(dashboardRecords, 'scouts'), [dashboardRecords]);
   const revenueData = useMemo(() => monthlyData(dashboardRecords, 'paid'), [dashboardRecords]);
@@ -232,12 +246,31 @@ export default function App() {
     ...(db.schools?.[form.division]?.[form.district] || []),
     ...records.filter(r => r.division === form.division && r.district === form.district).map(r => r.school)
   ]);
-  const districtScouts = districtNames.map(name => ({
-    name, value: dashboardRecords.filter(r => r.division === selectedDivision && r.district === name).reduce((s,r) => s + scoutsOf(r), 0)
-  }));
-  const districtLeaders = districtNames.map(name => ({
-    name, value: dashboardRecords.filter(r => r.division === selectedDivision && r.district === name).reduce((s,r) => s + Number(r.leaders || 0), 0)
-  }));
+  const districtScouts = districtNames.map(name => {
+    const recordsForDistrict = dashboardRecords.filter(r => r.division === selectedDivision && r.district === name);
+    return {
+      name,
+      value: recordsForDistrict.reduce((s,r) => s + scoutsOf(r), 0),
+      records: recordsForDistrict
+    };
+  });
+  const districtLeaders = districtNames.map(name => {
+    const recordsForDistrict = dashboardRecords.filter(r => r.division === selectedDivision && r.district === name);
+    return {
+      name,
+      value: recordsForDistrict.reduce((s,r) => s + Number(r.leaders || 0), 0),
+      records: recordsForDistrict
+    };
+  });
+
+  function openChartDetail(item) {
+    if (!item?.records || item.records.length === 0) return;
+    setChartDetail({
+      title: item.name || item.period || 'Registration detail',
+      records: item.records
+    });
+  }
+  function closeChartDetail() { setChartDetail(null); }
 
   function setField(key, value) { setForm(prev => ({ ...prev, [key]: value })); }
   const formScouts = scoutsOf(form);
@@ -476,20 +509,20 @@ export default function App() {
             <Metric label="Total Collections" value={money(totals.paid)} note="Actual recorded payments" icon={PhilippinePeso}/>
           </div>
           <div className="two-col">
-            <Panel title="Scouts by Division" subtitle="Share of registered scouts"><ChartPie data={scoutByDivision}/></Panel>
-            <Panel title="Unit Leaders by Division" subtitle="Share of registered Unit Leaders"><ChartPie data={leadersByDivision}/></Panel>
+            <Panel title="Scouts by Division" subtitle="Share of registered scouts"><ChartPie data={scoutByDivision} onSelect={openChartDetail}/></Panel>
+            <Panel title="Unit Leaders by Division" subtitle="Share of registered Unit Leaders"><ChartPie data={leadersByDivision} onSelect={openChartDetail}/></Panel>
           </div>
           <div className="two-col">
-            <Panel title="Male to Female Scouts" subtitle="Gender breakdown for all scouts"><ChartPie data={genderData}/></Panel>
-            <Panel title="Scout Registration Breakdown" subtitle="Council-wide totals by section"><div className="chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={sectionData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis allowDecimals={false}/><Tooltip formatter={v => fmt(v)}/><Bar dataKey="total" radius={[5,5,0,0]}>{sectionData.map((entry, index) => <Cell key={entry.name} fill={SECTION_COLOR_LIST[index] || '#174a78'} />)}</Bar></BarChart></ResponsiveContainer></div></Panel>
+            <Panel title="Male to Female Scouts" subtitle="Gender breakdown for all scouts"><ChartPie data={genderData} onSelect={openChartDetail}/></Panel>
+            <Panel title="Scout Registration Breakdown" subtitle="Council-wide totals by section"><div className="chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={sectionData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis allowDecimals={false}/><Tooltip formatter={v => fmt(v)}/><Bar dataKey="total" radius={[5,5,0,0]} onClick={item => openChartDetail(item)}>{sectionData.map((entry, index) => <Cell key={entry.name} fill={SECTION_COLOR_LIST[index] || '#174a78'} />)}</Bar></BarChart></ResponsiveContainer></div></Panel>
           </div>
           <div className="two-col">
-            <Panel title="Registration Trend" subtitle={selectedMonth === 'all' ? 'Scouts registered by month' : selectedMonth === 'to-date' ? `Scouts registered from January to ${new Date(`${year}-${String(currentMonth).padStart(2,'0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}` : `Scouts registered in ${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="scouts" stroke="#174a78" strokeWidth={3} dot={{fill:'#e4ad37',r:4}}/></LineChart></ResponsiveContainer></div></Panel>
-            <Panel title="Monthly Collections" subtitle={selectedMonth === 'all' ? 'Recorded payments by month' : selectedMonth === 'to-date' ? `Payments recorded from January to ${new Date(`${year}-${String(currentMonth).padStart(2,'0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}` : `Payments recorded in ${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={revenueData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis/><Tooltip formatter={v => money(v)}/><Bar dataKey="collections" fill="#26936d" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div></Panel>
+            <Panel title="Registration Trend" subtitle={selectedMonth === 'all' ? 'Scouts registered by month' : selectedMonth === 'to-date' ? `Scouts registered from January to ${new Date(`${year}-${String(currentMonth).padStart(2,'0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}` : `Scouts registered in ${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="scouts" stroke="#174a78" strokeWidth={3} dot={{fill:'#e4ad37',r:4}} onClick={item => openChartDetail(item)} /></LineChart></ResponsiveContainer></div></Panel>
+            <Panel title="Monthly Collections" subtitle={selectedMonth === 'all' ? 'Recorded payments by month' : selectedMonth === 'to-date' ? `Payments recorded from January to ${new Date(`${year}-${String(currentMonth).padStart(2,'0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}` : `Payments recorded in ${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={revenueData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis/><Tooltip formatter={v => money(v)}/><Bar dataKey="collections" fill="#26936d" radius={[5,5,0,0]} onClick={item => openChartDetail(item)} /></BarChart></ResponsiveContainer></div></Panel>
           </div>
           <Panel title="Division Drill-down" subtitle="Select a division to view district-level scout and leader distribution.">
             <div className="chip-row">{db.divisions.map(d => <button key={d} className={`chip ${selectedDivision === d ? 'selected' : ''}`} onClick={() => setSelectedDivision(d)}>{d}</button>)}</div>
-            <div className="two-col drill-charts"><Panel title={`${selectedDivision} — Scouts by District`}><ChartPie data={districtScouts}/></Panel><Panel title={`${selectedDivision} — Unit Leaders by District`}><ChartPie data={districtLeaders}/></Panel></div>
+            <div className="two-col drill-charts"><Panel title={`${selectedDivision} — Scouts by District`}><ChartPie data={districtScouts} onSelect={openChartDetail}/></Panel><Panel title={`${selectedDivision} — Unit Leaders by District`}><ChartPie data={districtLeaders} onSelect={openChartDetail}/></Panel></div>
           </Panel>
         </section>}
 
@@ -550,6 +583,7 @@ export default function App() {
           <div className="two-col"><Panel title="Add Division" subtitle="Create an additional division."><button className="btn gold" onClick={addDivision}><PlusCircle size={16}/> Add Division</button></Panel><Panel title="Add District" subtitle="Add a district under a selected division."><button className="btn gold" onClick={addDistrict}><PlusCircle size={16}/> Add District</button></Panel><Panel title="Add School" subtitle="Add a school under a division and district."><button className="btn gold" onClick={addSchool}><PlusCircle size={16}/> Add School</button></Panel></div>
           <Panel title="Current Divisions and Districts">{db.divisions.map(d => <div className="division-row" key={d}><b>{d}</b><span>{(db.districts[d] || []).length ? db.districts[d].join(' · ') : 'No districts added yet'}</span>{db.schools?.[d] && Object.entries(db.schools[d]).length ? <div className="school-list"><small>Schools:</small> {Object.entries(db.schools[d]).map(([district, schools]) => <div key={`${d}-${district}`}><strong>{district}:</strong> {schools.join(' · ')}</div>)}</div> : <div className="school-list"><small>No schools added yet.</small></div>}</div>)}</Panel>
         </section>}
+        {chartDetail && <div className="chart-modal-backdrop" onClick={closeChartDetail}><div className="chart-modal" onClick={e => e.stopPropagation()}><div className="chart-modal-header"><h3>{chartDetail.title}</h3><button className="chart-modal-close" onClick={closeChartDetail} aria-label="Close graph details">×</button></div><div className="chart-modal-body"><table><thead><tr><th>Invoice Number</th><th>School</th><th>Division</th><th>District</th><th>Date</th></tr></thead><tbody>{chartDetail.records.map(record => <tr key={record.id || `${record.receipt}-${record.school}-${record.date}`}><td>{record.receipt || '—'}</td><td>{record.school || '—'}</td><td>{record.division || '—'}</td><td>{record.district || '—'}</td><td>{record.date || '—'}</td></tr>)}</tbody></table></div></div></div>}
         <footer className="footer">BSP Agusan Council · Registration Analytics System <span>Prototype v1.0</span></footer>
       </main>
     </div>
@@ -560,12 +594,15 @@ function monthlyData(records, field) {
   const map = {};
   records.forEach(r => {
     if (!r.date) return;
-    const key = r.date.slice(0,7); map[key] ||= 0;
-    map[key] += field === 'scouts' ? scoutsOf(r) : Number(r[field] || 0);
+    const key = r.date.slice(0, 7);
+    map[key] ||= { total: 0, records: [] };
+    map[key].total += field === 'scouts' ? scoutsOf(r) : Number(r[field] || 0);
+    map[key].records.push(r);
   });
-  return Object.entries(map).sort(([a],[b]) => a.localeCompare(b)).map(([key,value]) => ({
+  return Object.entries(map).sort(([a],[b]) => a.localeCompare(b)).map(([key, bucket]) => ({
     period: new Date(`${key}-02`).toLocaleDateString('en-PH',{month:'short',year:'2-digit'}),
-    [field === 'scouts' ? 'scouts' : 'collections']: value
+    records: bucket.records,
+    [field === 'scouts' ? 'scouts' : 'collections']: bucket.total
   }));
 }
 function weeklyData(records, field) {
@@ -584,10 +621,11 @@ function weeklyData(records, field) {
     [field === 'scouts' ? 'scouts' : 'collections']: value
   }));
 }
-function ChartPie({ data }) {
-  const hasData = data.some(x => x.value > 0);
+function ChartPie({ data, onSelect }) {
+  const visible = data.filter(x => x.value > 0);
+  const hasData = visible.length > 0;
   if (!hasData) return <EmptyChart/>;
-  return <div className="pie-layout"><div className="pie-chart"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data.filter(x => x.value > 0)} dataKey="value" nameKey="name" innerRadius={54} outerRadius={88} paddingAngle={2}>{data.filter(x => x.value > 0).map((x,i) => <Cell key={x.name} fill={SECTION_COLORS[x.name] || COLORS[i % COLORS.length]}/>)}</Pie><Tooltip formatter={v => fmt(v)}/></PieChart></ResponsiveContainer></div><div className="pie-legend">{data.filter(x => x.value > 0).map((x,i) => <div key={x.name}><i style={{background:SECTION_COLORS[x.name] || COLORS[i % COLORS.length]}}/><span>{x.name}</span><b>{fmt(x.value)}</b></div>)}</div></div>;
+  return <div className="pie-layout"><div className="pie-chart"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={visible} dataKey="value" nameKey="name" innerRadius={54} outerRadius={88} paddingAngle={2} onClick={item => onSelect?.(item)}>{visible.map((x,i) => <Cell key={x.name} fill={SECTION_COLORS[x.name] || COLORS[i % COLORS.length]}/>)}</Pie><Tooltip formatter={v => fmt(v)}/></PieChart></ResponsiveContainer></div><div className="pie-legend">{visible.map((x,i) => <div key={x.name} onClick={() => onSelect?.(x)} className="pie-legend-item"><i style={{background:SECTION_COLORS[x.name] || COLORS[i % COLORS.length]}}/><span>{x.name}</span><b>{fmt(x.value)}</b></div>)}</div></div>;
 }
 function FormSection({ title, children }) { return <div className="form-section"><h3>{title}</h3><div className="form-grid">{children}</div></div>; }
 function Field({ label, children }) { return <label className="field"><span>{label}</span>{children}</label>; }
