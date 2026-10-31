@@ -45,9 +45,11 @@ const totalsOf = records => records.reduce((a, r) => {
   SECTIONS.forEach(([key]) => a[key] += Number(r[key] || 0));
   a.scouts += scoutsOf(r); a.leaders += Number(r.leaders || 0); a.heads += Number(r.heads || 0);
   a.entries += 1; a.paid += Number(r.paid || 0); a.male += Number(r.male || 0);
-  a.female += Number(r.female || 0);
+  a.female += Number(r.female || 0); a.leaderMale += Number(r.leaderMale || 0);
+  a.leaderFemale += Number(r.leaderFemale || 0); a.headMale += Number(r.headMale || 0);
+  a.headFemale += Number(r.headFemale || 0);
   return a;
-}, { scouts: 0, leaders: 0, heads: 0, entries: 0, paid: 0, male: 0, female: 0, kid: 0, kab: 0, boy: 0, senior: 0, rover: 0 });
+}, { scouts: 0, leaders: 0, heads: 0, entries: 0, paid: 0, male: 0, female: 0, leaderMale: 0, leaderFemale: 0, headMale: 0, headFemale: 0, kid: 0, kab: 0, boy: 0, senior: 0, rover: 0 });
 const load = () => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
@@ -91,7 +93,8 @@ export default function App() {
   const [form, setForm] = useState({
     division: DEFAULT_DIVISIONS[0], district: '', school: '', date: today(),
     receipt: '', aur: '', kid: 0, kab: 0, boy: 0, senior: 0, rover: 0,
-    male: 0, female: 0, leaders: 0, heads: 0, scoutFee: 0, leaderFee: 0, institutionFee: 0,
+    male: 0, female: 0, leaders: 0, leaderMale: 0, leaderFemale: 0, heads: 0,
+    headMale: 0, headFemale: 0, scoutFee: 0, leaderFee: 0, institutionFee: 0,
     paid: 0, paymentNotes: ''
   });
 
@@ -233,6 +236,14 @@ export default function App() {
     { name: 'Male Scouts', value: totals.male, records: dashboardRecords.filter(r => Number(r.male || 0) > 0) },
     { name: 'Female Scouts', value: totals.female, records: dashboardRecords.filter(r => Number(r.female || 0) > 0) }
   ];
+  const unitLeaderGenderData = [
+    { name: 'Male Unit Leaders', value: totals.leaderMale, records: dashboardRecords.filter(r => Number(r.leaderMale || 0) > 0) },
+    { name: 'Female Unit Leaders', value: totals.leaderFemale, records: dashboardRecords.filter(r => Number(r.leaderFemale || 0) > 0) }
+  ];
+  const institutionalHeadGenderData = [
+    { name: 'Male Heads', value: totals.headMale, records: dashboardRecords.filter(r => Number(r.headMale || 0) > 0) },
+    { name: 'Female Heads', value: totals.headFemale, records: dashboardRecords.filter(r => Number(r.headFemale || 0) > 0) }
+  ];
   const trendData = useMemo(() => monthlyData(dashboardRecords, 'scouts'), [dashboardRecords]);
   const revenueData = useMemo(() => monthlyData(dashboardRecords, 'paid'), [dashboardRecords]);
   const districtNames = [...new Set([
@@ -282,8 +293,9 @@ export default function App() {
   function resetForm() {
     setEditingId(null);
     setForm({ division: db.divisions[0] || '', district: '', school: '', date: today(), receipt: '', aur: '',
-      kid: 0, kab: 0, boy: 0, senior: 0, rover: 0, male: 0, female: 0, leaders: 0, heads: 0,
-      scoutFee: 0, leaderFee: 0, institutionFee: 0, paid: 0, paymentNotes: '' });
+      kid: 0, kab: 0, boy: 0, senior: 0, rover: 0, male: 0, female: 0, leaders: 0, leaderMale: 0,
+      leaderFemale: 0, heads: 0, headMale: 0, headFemale: 0, scoutFee: 0, leaderFee: 0,
+      institutionFee: 0, paid: 0, paymentNotes: '' });
   }
   function saveRecord(e) {
     if (!isAdmin) {
@@ -292,8 +304,10 @@ export default function App() {
     }
     e.preventDefault();
     const record = { ...form, id: editingId || crypto.randomUUID(), expected };
-    if (Number(form.male) + Number(form.female) !== formScouts &&
-      !window.confirm('Male + Female count does not equal total scouts. Save anyway?')) return;
+    const leaderGenderMismatch = Number(form.leaders) !== Number(form.leaderMale) + Number(form.leaderFemale);
+    const headGenderMismatch = Number(form.heads) !== Number(form.headMale) + Number(form.headFemale);
+    if ((Number(form.male) + Number(form.female) !== formScouts || leaderGenderMismatch || headGenderMismatch) &&
+      !window.confirm('One or more gender counts do not equal the total registered count. Save anyway?')) return;
     setDb(prev => {
       const exists = prev.records.some(r => r.id === record.id);
       const nextRecords = exists ? prev.records.map(r => r.id === record.id ? record : r) : [...prev.records, record];
@@ -311,7 +325,17 @@ export default function App() {
       window.alert('Only the admin account can edit records.');
       return;
     }
-    setForm({ ...r }); setEditingId(r.id); setPage('form');
+    setForm({
+      ...r,
+      leaderMale: r.leaderMale ?? 0,
+      leaderFemale: r.leaderFemale ?? 0,
+      headMale: r.headMale ?? 0,
+      headFemale: r.headFemale ?? 0,
+      male: r.male ?? 0,
+      female: r.female ?? 0,
+      leaders: r.leaders ?? 0,
+      heads: r.heads ?? 0
+    }); setEditingId(r.id); setPage('form');
   }
   function deleteRecord(id) {
     if (!isAdmin) {
@@ -377,7 +401,7 @@ export default function App() {
     reader.readAsText(file);
   }
   function exportCsv() {
-    const cols = ['date','division','district','school','kid','kab','boy','senior','rover','male','female','leaders','heads','receipt','aur','scoutFee','leaderFee','institutionFee','expected','paid','paymentNotes'];
+    const cols = ['date','division','district','school','kid','kab','boy','senior','rover','male','female','leaders','leaderMale','leaderFemale','heads','headMale','headFemale','receipt','aur','scoutFee','leaderFee','institutionFee','expected','paid','paymentNotes'];
     const csv = [cols.join(','), ...records.map(r => cols.map(k => `"${String(r[k] ?? '').replaceAll('"','""')}"`).join(','))].join('\n');
     download(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'BSP-Agusan-Registrations.csv');
   }
@@ -506,6 +530,11 @@ export default function App() {
           <div className="metric-grid">
             <Metric label="Total Registered Scouts" value={fmt(totals.scouts)} note="Across selected period" icon={Users}/>
             <Metric label="Unit Leaders" value={fmt(totals.leaders)} note="Registered leaders" icon={UserRound}/>
+            <Metric label="Male Unit Leaders" value={fmt(totals.leaderMale)} note="Registered leaders" icon={UserRound}/>
+            <Metric label="Female Unit Leaders" value={fmt(totals.leaderFemale)} note="Registered leaders" icon={UserRound}/>
+            <Metric label="Institutional Heads" value={fmt(totals.heads)} note="Registered heads" icon={School}/>
+            <Metric label="Male Heads" value={fmt(totals.headMale)} note="Registered heads" icon={School}/>
+            <Metric label="Female Heads" value={fmt(totals.headFemale)} note="Registered heads" icon={School}/>
             <Metric label="School Registrations" value={fmt(totals.entries)} note="Encoded submissions" icon={School}/>
             <Metric label="Total Collections" value={money(totals.paid)} note="Actual recorded payments" icon={PhilippinePeso}/>
           </div>
@@ -515,7 +544,11 @@ export default function App() {
           </div>
           <div className="two-col">
             <Panel title="Male to Female Scouts" subtitle="Gender breakdown for all scouts"><ChartPie data={genderData} onSelect={openChartDetail}/></Panel>
+            <Panel title="Unit Leaders & Institutional Heads by Gender" subtitle="Breakdown of registered leader and head counts"><div className="two-col" style={{ gridTemplateColumns: '1fr 1fr' }}><ChartPie data={unitLeaderGenderData} onSelect={openChartDetail}/><ChartPie data={institutionalHeadGenderData} onSelect={openChartDetail}/></div></Panel>
+          </div>
+          <div className="two-col">
             <Panel title="Scout Registration Breakdown" subtitle="Council-wide totals by section"><div className="chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={sectionData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis allowDecimals={false}/><Tooltip formatter={v => fmt(v)}/><Bar dataKey="total" radius={[5,5,0,0]} onClick={item => openChartDetail(item)}>{sectionData.map((entry, index) => <Cell key={entry.name} fill={SECTION_COLOR_LIST[index] || '#174a78'} />)}</Bar></BarChart></ResponsiveContainer></div></Panel>
+            <Panel title="Institutional Heads by Division" subtitle="Share of registered heads"><ChartPie data={db.divisions.map(name => { const recordsForDivision = dashboardRecords.filter(r => r.division === name); return { name: name.replace(' Division', ''), value: recordsForDivision.reduce((s, r) => s + Number(r.heads || 0), 0), records: recordsForDivision }; })} onSelect={openChartDetail}/></Panel>
           </div>
           <div className="two-col">
             <Panel title="Registration Trend" subtitle={selectedMonth === 'all' ? 'Scouts registered by month' : selectedMonth === 'to-date' ? `Scouts registered from January to ${new Date(`${year}-${String(currentMonth).padStart(2,'0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}` : `Scouts registered in ${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="scouts" stroke="#174a78" strokeWidth={3} dot={{fill:'#e4ad37',r:4}} onClick={item => openChartDetail(item)} /></LineChart></ResponsiveContainer></div></Panel>
@@ -547,7 +580,13 @@ export default function App() {
             </FormSection>
             <FormSection title="3. Unit Leaders & Institutional Heads">
               <Field label="Number of Unit Leaders"><input type="number" min="0" value={form.leaders} onChange={e => setField('leaders',e.target.value)}/></Field>
+              <Field label="Male Unit Leaders"><input type="number" min="0" value={form.leaderMale} onChange={e => setField('leaderMale',e.target.value)}/></Field>
+              <Field label="Female Unit Leaders"><input type="number" min="0" value={form.leaderFemale} onChange={e => setField('leaderFemale',e.target.value)}/></Field>
+              <Field label="Unit Leader Gender Check"><input readOnly value={Number(form.leaderMale) + Number(form.leaderFemale) === Number(form.leaders) ? 'Matched' : `Difference: ${Math.abs(Number(form.leaders)-Number(form.leaderMale)-Number(form.leaderFemale))}`}/></Field>
               <Field label="Number of Institutional Heads"><input type="number" min="0" value={form.heads} onChange={e => setField('heads',e.target.value)}/></Field>
+              <Field label="Male Institutional Heads"><input type="number" min="0" value={form.headMale} onChange={e => setField('headMale',e.target.value)}/></Field>
+              <Field label="Female Institutional Heads"><input type="number" min="0" value={form.headFemale} onChange={e => setField('headFemale',e.target.value)}/></Field>
+              <Field label="Institutional Head Gender Check"><input readOnly value={Number(form.headMale) + Number(form.headFemale) === Number(form.heads) ? 'Matched' : `Difference: ${Math.abs(Number(form.heads)-Number(form.headMale)-Number(form.headFemale))}`}/></Field>
             </FormSection>
             <FormSection title="4. Fees and Payment">
               <Field label="Fee per Scout (₱)"><input type="number" min="0" step="0.01" value={form.scoutFee} onChange={e => setField('scoutFee',e.target.value)}/></Field>
@@ -573,7 +612,7 @@ export default function App() {
         {page === 'reports' && <section className="page">
           <div className="page-heading"><div><h1>Reports & Print Center</h1><p>Printable council registration and collection summaries.</p></div><button className="btn gold" onClick={printPage}><Printer size={16}/> Print Report</button></div>
           <div className="notice">Reports are generated from records saved in this browser. Use Backup regularly to protect your data.</div>
-          <div className="metric-grid"><Metric label="Total Scouts" value={fmt(totalsOf(records).scouts)} note="All encoded years" icon={Users}/><Metric label="Unit Leaders" value={fmt(totalsOf(records).leaders)} note="All divisions" icon={UserRound}/><Metric label="Registrations" value={fmt(records.length)} note="School submissions" icon={School}/><Metric label="Collections" value={money(totalsOf(records).paid)} note="Actual recorded payments" icon={PhilippinePeso}/></div>
+          <div className="metric-grid"><Metric label="Total Scouts" value={fmt(totalsOf(records).scouts)} note="All encoded years" icon={Users}/><Metric label="Unit Leaders" value={fmt(totalsOf(records).leaders)} note="All divisions" icon={UserRound}/><Metric label="Male Unit Leaders" value={fmt(totalsOf(records).leaderMale)} note="All divisions" icon={UserRound}/><Metric label="Female Unit Leaders" value={fmt(totalsOf(records).leaderFemale)} note="All divisions" icon={UserRound}/><Metric label="Institutional Heads" value={fmt(totalsOf(records).heads)} note="All divisions" icon={School}/><Metric label="Male Heads" value={fmt(totalsOf(records).headMale)} note="All divisions" icon={School}/><Metric label="Female Heads" value={fmt(totalsOf(records).headFemale)} note="All divisions" icon={School}/><Metric label="Registrations" value={fmt(records.length)} note="School submissions" icon={School}/><Metric label="Collections" value={money(totalsOf(records).paid)} note="Actual recorded payments" icon={PhilippinePeso}/></div>
           <div className="two-col"><Panel title="Scouts by Division"><ChartPie data={scoutByDivision}/></Panel><Panel title="Unit Leaders by Division"><ChartPie data={leadersByDivision}/></Panel></div>
           <Panel title="Scout Section Summary"><div className="table-wrap"><table><thead><tr><th>Scout Section</th><th>Total Registered</th></tr></thead><tbody>{SECTIONS.map(([k,label]) => <tr key={k}><td>{label}</td><td>{fmt(totalsOf(records)[k])}</td></tr>)}<tr><th>Total Scouts</th><th>{fmt(totalsOf(records).scouts)}</th></tr></tbody></table></div></Panel>
           <Panel title="Division Summary"><DivisionSummary divisions={db.divisions} records={records}/></Panel>
