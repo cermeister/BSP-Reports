@@ -43,17 +43,47 @@ const fmt = n => new Intl.NumberFormat('en-PH').format(Number(n || 0));
 const scoutsOf = r => SECTIONS.reduce((sum, [key]) => sum + Number(r[key] || 0), 0);
 const totalsOf = records => records.reduce((a, r) => {
   SECTIONS.forEach(([key]) => a[key] += Number(r[key] || 0));
-  a.scouts += scoutsOf(r); a.leaders += Number(r.leaders || 0); a.heads += Number(r.heads || 0);
-  a.entries += 1; a.paid += Number(r.paid || 0); a.male += Number(r.male || 0);
-  a.female += Number(r.female || 0); a.leaderMale += Number(r.leaderMale || 0);
-  a.leaderFemale += Number(r.leaderFemale || 0); a.headMale += Number(r.headMale || 0);
+  a.scouts += scoutsOf(r);
+  a.leaders += Number(r.leaders || 0);
+  a.heads += Number(r.heads || 0);
+  a.leaderMale += Number(r.leaderMale || 0);
+  a.leaderFemale += Number(r.leaderFemale || 0);
+  a.headMale += Number(r.headMale || 0);
   a.headFemale += Number(r.headFemale || 0);
+  a.entries += 1;
+  a.paid += Number(r.paid || 0);
+  a.male += Number(r.male || 0);
+  a.female += Number(r.female || 0);
   return a;
-}, { scouts: 0, leaders: 0, heads: 0, entries: 0, paid: 0, male: 0, female: 0, leaderMale: 0, leaderFemale: 0, headMale: 0, headFemale: 0, kid: 0, kab: 0, boy: 0, senior: 0, rover: 0 });
+}, {
+  scouts: 0,
+  leaders: 0,
+  heads: 0,
+  leaderMale: 0,
+  leaderFemale: 0,
+  headMale: 0,
+  headFemale: 0,
+  entries: 0,
+  paid: 0,
+  male: 0,
+  female: 0,
+  kid: 0,
+  kab: 0,
+  boy: 0,
+  senior: 0,
+  rover: 0
+});
+const normalizeRecord = record => ({
+  ...record,
+  leaderMale: record?.leaderMale ?? 0,
+  leaderFemale: record?.leaderFemale ?? 0,
+  headMale: record?.headMale ?? 0,
+  headFemale: record?.headFemale ?? 0
+});
 const load = () => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    return { ...EMPTY, ...saved };
+    return { ...EMPTY, ...saved, records: (saved.records || []).map(normalizeRecord) };
   } catch {
     return EMPTY;
   }
@@ -85,6 +115,7 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [page, setPage] = useState('dashboard');
   const [selectedDivision, setSelectedDivision] = useState(DEFAULT_DIVISIONS[0]);
+  const [dashboardDivision, setDashboardDivision] = useState('all');
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [selectedMonth, setSelectedMonth] = useState('to-date');
   const [query, setQuery] = useState('');
@@ -96,10 +127,17 @@ export default function App() {
   const [form, setForm] = useState({
     division: DEFAULT_DIVISIONS[0], district: '', school: '', date: today(),
     receipt: '', aur: '', kid: 0, kab: 0, boy: 0, senior: 0, rover: 0,
-    male: 0, female: 0, leaders: 0, leaderMale: 0, leaderFemale: 0, heads: 0,
-    headMale: 0, headFemale: 0, scoutFee: 0, leaderFee: 0, institutionFee: 0,
-    paid: 0, paymentNotes: ''
+    male: 0, female: 0, leaders: 0, heads: 0, leaderMale: 0, leaderFemale: 0, headMale: 0, headFemale: 0,
+    scoutFee: 0, leaderFee: 0, institutionFee: 0, paid: 0, paymentNotes: ''
   });
+
+  useEffect(() => {
+    if (dashboardDivision === 'all') {
+      setSelectedDivision(prev => (db.divisions.includes(prev) ? prev : (db.divisions[0] || '')));
+      return;
+    }
+    setSelectedDivision(dashboardDivision);
+  }, [dashboardDivision, db.divisions]);
 
   useEffect(() => {
     if (authUser) {
@@ -129,7 +167,7 @@ export default function App() {
       }
 
       if (data?.payload && Array.isArray(data.payload.records)) {
-        const nextState = { ...EMPTY, ...data.payload, schools: data.payload.schools || {} };
+        const nextState = { ...EMPTY, ...data.payload, records: (data.payload.records || []).map(normalizeRecord), schools: data.payload.schools || {} };
         setDb(nextState);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
         return;
@@ -563,7 +601,7 @@ export default function App() {
       </aside>
       <main className="content">
         {page === 'dashboard' && <section className="page">
-          <div className="page-heading"><div><h1>Council Overview</h1><p>Registration performance, membership distribution, and collections.</p></div><div className="header-controls"><select className="control year-select" value={year} onChange={e => { setYear(e.target.value); if (e.target.value === 'all') setSelectedMonth('all'); else setSelectedMonth('to-date'); }}><option value="all">All years</option>{yearOptions.map(y => <option key={y}>{y}</option>)}</select><select className="control" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} disabled={year === 'all'}><option value="all">All months</option><option value="to-date">From January to current month</option>{monthOptions.filter(m => m !== 'all').map(month => <option key={month} value={month}>{new Date(`${year}-${month}-01`).toLocaleDateString('en-PH', { month: 'long' })}</option>)}</select></div></div>
+          <div className="page-heading"><div><h1>Council Overview</h1><p>Registration performance, membership distribution, and collections.</p></div><div className="header-controls"><select className="control year-select" value={year} onChange={e => { setYear(e.target.value); if (e.target.value === 'all') setSelectedMonth('all'); else setSelectedMonth('to-date'); }}><option value="all">All years</option>{yearOptions.map(y => <option key={y}>{y}</option>)}</select><select className="control" value={dashboardDivision} onChange={e => setDashboardDivision(e.target.value)}><option value="all">All divisions</option>{db.divisions.map(d => <option key={d} value={d}>{d}</option>)}</select><select className="control" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} disabled={year === 'all'}><option value="all">All months</option><option value="to-date">From January to current month</option>{monthOptions.filter(m => m !== 'all').map(month => <option key={month} value={month}>{new Date(`${year}-${month}-01`).toLocaleDateString('en-PH', { month: 'long' })}</option>)}</select></div></div>
           <div className="metric-grid">
             <Metric label="Total Registered Scouts" value={fmt(totals.scouts)} note="Across selected period" icon={Users}/>
             <MetricWithGender label="Unit Leaders" total={fmt(totals.leaders)} male={fmt(totals.leaderMale)} female={fmt(totals.leaderFemale)} note="Registered leaders" icon={UserRound}/>
@@ -589,7 +627,7 @@ export default function App() {
             <Panel title="Monthly Collections" subtitle={selectedMonth === 'all' ? 'Recorded payments by month' : selectedMonth === 'to-date' ? `Payments recorded from January to ${new Date(`${year}-${String(currentMonth).padStart(2,'0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}` : `Payments recorded in ${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={revenueData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis/><Tooltip formatter={v => money(v)}/><Bar dataKey="collections" fill="#26936d" radius={[5,5,0,0]} onClick={item => openChartDetail(item)} /></BarChart></ResponsiveContainer></div></Panel>
           </div>
           <Panel title="Division Drill-down" subtitle="Select a division to view district-level scout and leader distribution.">
-            <div className="chip-row">{db.divisions.map(d => <button key={d} className={`chip ${selectedDivision === d ? 'selected' : ''}`} onClick={() => setSelectedDivision(d)}>{d}</button>)}</div>
+            <div className="chip-row">{db.divisions.map(d => <button key={d} className={`chip ${selectedDivision === d ? 'selected' : ''}`} onClick={() => { setDashboardDivision(d); setSelectedDivision(d); }}>{d}</button>)}</div>
             <div className="two-col drill-charts"><Panel title={`${selectedDivision} — Scouts by District`}><ChartPie data={districtScouts} onSelect={openChartDetail}/></Panel><Panel title={`${selectedDivision} — Unit Leaders by District`}><ChartPie data={districtLeaders} onSelect={openChartDetail}/></Panel></div>
           </Panel>
         </section>}
@@ -616,11 +654,11 @@ export default function App() {
               <Field label="Number of Unit Leaders"><input type="number" min="0" value={form.leaders} onChange={e => setField('leaders',e.target.value)}/></Field>
               <Field label="Male Unit Leaders"><input type="number" min="0" value={form.leaderMale} onChange={e => setField('leaderMale',e.target.value)}/></Field>
               <Field label="Female Unit Leaders"><input type="number" min="0" value={form.leaderFemale} onChange={e => setField('leaderFemale',e.target.value)}/></Field>
-              <Field label="Unit Leader Gender Check"><input readOnly value={Number(form.leaderMale) + Number(form.leaderFemale) === Number(form.leaders) ? 'Matched' : `Difference: ${Math.abs(Number(form.leaders)-Number(form.leaderMale)-Number(form.leaderFemale))}`}/></Field>
+              <Field label="Unit Leader Gender Check"><input readOnly value={Number(form.leaderMale) + Number(form.leaderFemale) === Number(form.leaders || 0) ? 'Matched' : `Difference: ${Math.abs(Number(form.leaders || 0)-Number(form.leaderMale)-Number(form.leaderFemale))}`}/></Field>
               <Field label="Number of Institutional Heads"><input type="number" min="0" value={form.heads} onChange={e => setField('heads',e.target.value)}/></Field>
               <Field label="Male Institutional Heads"><input type="number" min="0" value={form.headMale} onChange={e => setField('headMale',e.target.value)}/></Field>
               <Field label="Female Institutional Heads"><input type="number" min="0" value={form.headFemale} onChange={e => setField('headFemale',e.target.value)}/></Field>
-              <Field label="Institutional Head Gender Check"><input readOnly value={Number(form.headMale) + Number(form.headFemale) === Number(form.heads) ? 'Matched' : `Difference: ${Math.abs(Number(form.heads)-Number(form.headMale)-Number(form.headFemale))}`}/></Field>
+              <Field label="Institutional Head Gender Check"><input readOnly value={Number(form.headMale) + Number(form.headFemale) === Number(form.heads || 0) ? 'Matched' : `Difference: ${Math.abs(Number(form.heads || 0)-Number(form.headMale)-Number(form.headFemale))}`}/></Field>
             </FormSection>
             <FormSection title="4. Fees and Payment">
               <Field label="Fee per Scout (₱)"><input type="number" min="0" step="0.01" value={form.scoutFee} onChange={e => setField('scoutFee',e.target.value)}/></Field>
