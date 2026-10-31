@@ -197,6 +197,40 @@ export default function App() {
   }, [db]);
 
   const records = db.records || [];
+  const validationIssues = records
+    .map(r => {
+      const scoutTotal = scoutsOf(r);
+      const maleTotal = Number(r.male || 0);
+      const femaleTotal = Number(r.female || 0);
+      const leaderTotal = Number(r.leaders || 0);
+      const leaderMale = Number(r.leaderMale || 0);
+      const leaderFemale = Number(r.leaderFemale || 0);
+      const headTotal = Number(r.heads || 0);
+      const headMale = Number(r.headMale || 0);
+      const headFemale = Number(r.headFemale || 0);
+      const scoutMismatch = maleTotal + femaleTotal !== scoutTotal;
+      const leaderMismatch = leaderMale + leaderFemale !== leaderTotal;
+      const headMismatch = headMale + headFemale !== headTotal;
+      if (!scoutMismatch && !leaderMismatch && !headMismatch) return null;
+      return {
+        id: r.id,
+        date: r.date || '—',
+        division: r.division || '—',
+        district: r.district || '—',
+        school: r.school || '—',
+        receipt: r.receipt || '—',
+        scoutMismatch,
+        leaderMismatch,
+        headMismatch,
+        scoutExpected: scoutTotal,
+        scoutActual: maleTotal + femaleTotal,
+        leaderExpected: leaderTotal,
+        leaderActual: leaderMale + leaderFemale,
+        headExpected: headTotal,
+        headActual: headMale + headFemale
+      };
+    })
+    .filter(Boolean);
   const isAdmin = authUser?.role === 'admin';
   const isViewer = authUser?.role === 'viewer';
   const yearOptions = [...new Set([new Date().getFullYear(), ...records.map(r => Number((r.date || '').slice(0, 4))).filter(Boolean)])].sort((a,b) => b-a);
@@ -537,6 +571,7 @@ export default function App() {
             <Metric label="School Registrations" value={fmt(totals.entries)} note="Encoded submissions" icon={School}/>
             <Metric label="Total Collections" value={money(totals.paid)} note="Actual recorded payments" icon={PhilippinePeso}/>
           </div>
+          {validationIssues.length > 0 && <Panel title="Data validation issues" subtitle="These registrations have missing or mismatched gender totals."><div className="table-wrap"><table><thead><tr><th>School</th><th>Receipt</th><th>Division</th><th>District</th><th>Scouts</th><th>Leader count</th><th>Head count</th></tr></thead><tbody>{validationIssues.map(issue => <tr key={issue.id}><td>{issue.school}</td><td>{issue.receipt}</td><td>{issue.division}</td><td>{issue.district}</td><td>{issue.scoutMismatch ? `${issue.scoutActual} vs ${issue.scoutExpected}` : 'OK'}</td><td>{issue.leaderMismatch ? `${issue.leaderActual} vs ${issue.leaderExpected}` : 'OK'}</td><td>{issue.headMismatch ? `${issue.headActual} vs ${issue.headExpected}` : 'OK'}</td></tr>)}</tbody></table></div></Panel>}
           <div className="two-col">
             <Panel title="Scouts by Division" subtitle="Share of registered scouts"><ChartPie data={scoutByDivision} onSelect={openChartDetail}/></Panel>
             <Panel title="Unit Leaders by Division" subtitle="Share of registered Unit Leaders"><ChartPie data={leadersByDivision} onSelect={openChartDetail}/></Panel>
