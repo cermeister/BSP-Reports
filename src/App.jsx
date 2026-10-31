@@ -63,7 +63,7 @@ function Metric({ label, value, note, icon: Icon }) {
   return <article className="metric"><div className="metric-top"><span>{label}</span><Icon size={18}/></div><strong>{value}</strong><small>{note}</small></article>;
 }
 function MetricWithGender({ label, total, male, female, note, icon: Icon }) {
-  return <article className="metric metric-with-gender"><div className="metric-top"><span>{label}</span><Icon size={18}/></div><strong>{total}</strong><div className="metric-gender-row"><span><b>M</b> {male}</span><span><b>F</b> {female}</span></div><small>{note}</small></article>;
+  return <article className="metric metric-with-gender"><div className="metric-top"><span>{label}</span><Icon size={18}/></div><strong>{total}</strong><div className="metric-gender-row"><span>Male: {male}</span><span>Female: {female}</span></div><small>{note}</small></article>;
 }
 function Panel({ title, subtitle, children, className = '' }) {
   return <section className={`panel ${className}`}><div className="panel-heading"><div><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div></div>{children}</section>;
