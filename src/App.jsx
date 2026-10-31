@@ -62,6 +62,9 @@ const load = () => {
 function Metric({ label, value, note, icon: Icon }) {
   return <article className="metric"><div className="metric-top"><span>{label}</span><Icon size={18}/></div><strong>{value}</strong><small>{note}</small></article>;
 }
+function MetricWithGender({ label, total, male, female, note, icon: Icon }) {
+  return <article className="metric metric-with-gender"><div className="metric-top"><span>{label}</span><Icon size={18}/></div><strong>{total}</strong><div className="metric-gender-row"><span><b>M</b> {male}</span><span><b>F</b> {female}</span></div><small>{note}</small></article>;
+}
 function Panel({ title, subtitle, children, className = '' }) {
   return <section className={`panel ${className}`}><div className="panel-heading"><div><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div></div>{children}</section>;
 }
@@ -529,12 +532,8 @@ export default function App() {
           <div className="page-heading"><div><h1>Council Overview</h1><p>Registration performance, membership distribution, and collections.</p></div><div className="header-controls"><select className="control year-select" value={year} onChange={e => { setYear(e.target.value); if (e.target.value === 'all') setSelectedMonth('all'); else setSelectedMonth('to-date'); }}><option value="all">All years</option>{yearOptions.map(y => <option key={y}>{y}</option>)}</select><select className="control" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} disabled={year === 'all'}><option value="all">All months</option><option value="to-date">From January to current month</option>{monthOptions.filter(m => m !== 'all').map(month => <option key={month} value={month}>{new Date(`${year}-${month}-01`).toLocaleDateString('en-PH', { month: 'long' })}</option>)}</select></div></div>
           <div className="metric-grid">
             <Metric label="Total Registered Scouts" value={fmt(totals.scouts)} note="Across selected period" icon={Users}/>
-            <Metric label="Unit Leaders" value={fmt(totals.leaders)} note="Registered leaders" icon={UserRound}/>
-            <Metric label="Male Unit Leaders" value={fmt(totals.leaderMale)} note="Registered leaders" icon={UserRound}/>
-            <Metric label="Female Unit Leaders" value={fmt(totals.leaderFemale)} note="Registered leaders" icon={UserRound}/>
-            <Metric label="Institutional Heads" value={fmt(totals.heads)} note="Registered heads" icon={School}/>
-            <Metric label="Male Heads" value={fmt(totals.headMale)} note="Registered heads" icon={School}/>
-            <Metric label="Female Heads" value={fmt(totals.headFemale)} note="Registered heads" icon={School}/>
+            <MetricWithGender label="Unit Leaders" total={fmt(totals.leaders)} male={fmt(totals.leaderMale)} female={fmt(totals.leaderFemale)} note="Registered leaders" icon={UserRound}/>
+            <MetricWithGender label="Institutional Heads" total={fmt(totals.heads)} male={fmt(totals.headMale)} female={fmt(totals.headFemale)} note="Registered heads" icon={School}/>
             <Metric label="School Registrations" value={fmt(totals.entries)} note="Encoded submissions" icon={School}/>
             <Metric label="Total Collections" value={money(totals.paid)} note="Actual recorded payments" icon={PhilippinePeso}/>
           </div>
@@ -612,7 +611,7 @@ export default function App() {
         {page === 'reports' && <section className="page">
           <div className="page-heading"><div><h1>Reports & Print Center</h1><p>Printable council registration and collection summaries.</p></div><button className="btn gold" onClick={printPage}><Printer size={16}/> Print Report</button></div>
           <div className="notice">Reports are generated from records saved in this browser. Use Backup regularly to protect your data.</div>
-          <div className="metric-grid"><Metric label="Total Scouts" value={fmt(totalsOf(records).scouts)} note="All encoded years" icon={Users}/><Metric label="Unit Leaders" value={fmt(totalsOf(records).leaders)} note="All divisions" icon={UserRound}/><Metric label="Male Unit Leaders" value={fmt(totalsOf(records).leaderMale)} note="All divisions" icon={UserRound}/><Metric label="Female Unit Leaders" value={fmt(totalsOf(records).leaderFemale)} note="All divisions" icon={UserRound}/><Metric label="Institutional Heads" value={fmt(totalsOf(records).heads)} note="All divisions" icon={School}/><Metric label="Male Heads" value={fmt(totalsOf(records).headMale)} note="All divisions" icon={School}/><Metric label="Female Heads" value={fmt(totalsOf(records).headFemale)} note="All divisions" icon={School}/><Metric label="Registrations" value={fmt(records.length)} note="School submissions" icon={School}/><Metric label="Collections" value={money(totalsOf(records).paid)} note="Actual recorded payments" icon={PhilippinePeso}/></div>
+          <div className="metric-grid"><Metric label="Total Scouts" value={fmt(totalsOf(records).scouts)} note="All encoded years" icon={Users}/><MetricWithGender label="Unit Leaders" total={fmt(totalsOf(records).leaders)} male={fmt(totalsOf(records).leaderMale)} female={fmt(totalsOf(records).leaderFemale)} note="All divisions" icon={UserRound}/><MetricWithGender label="Institutional Heads" total={fmt(totalsOf(records).heads)} male={fmt(totalsOf(records).headMale)} female={fmt(totalsOf(records).headFemale)} note="All divisions" icon={School}/><Metric label="Registrations" value={fmt(records.length)} note="School submissions" icon={School}/><Metric label="Collections" value={money(totalsOf(records).paid)} note="Actual recorded payments" icon={PhilippinePeso}/></div>
           <div className="two-col"><Panel title="Scouts by Division"><ChartPie data={scoutByDivision}/></Panel><Panel title="Unit Leaders by Division"><ChartPie data={leadersByDivision}/></Panel></div>
           <Panel title="Scout Section Summary"><div className="table-wrap"><table><thead><tr><th>Scout Section</th><th>Total Registered</th></tr></thead><tbody>{SECTIONS.map(([k,label]) => <tr key={k}><td>{label}</td><td>{fmt(totalsOf(records)[k])}</td></tr>)}<tr><th>Total Scouts</th><th>{fmt(totalsOf(records).scouts)}</th></tr></tbody></table></div></Panel>
           <Panel title="Division Summary"><DivisionSummary divisions={db.divisions} records={records}/></Panel>
