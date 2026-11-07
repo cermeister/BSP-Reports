@@ -117,6 +117,14 @@ export default function App() {
   const [selectedDivision, setSelectedDivision] = useState(DEFAULT_DIVISIONS[0]);
   const [dashboardDivision, setDashboardDivision] = useState('all');
   const [year, setYear] = useState(new Date().getFullYear().toString());
+
+  useEffect(() => {
+    if (dashboardDivision === 'all') {
+      setSelectedDivision(prev => (db.divisions.includes(prev) ? prev : (db.divisions[0] || '')));
+      return;
+    }
+    setSelectedDivision(dashboardDivision);
+  }, [dashboardDivision, db.divisions]);
   const [selectedMonth, setSelectedMonth] = useState('to-date');
   const [query, setQuery] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
