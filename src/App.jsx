@@ -29,6 +29,8 @@ const SECTION_COLORS = {
 };
 const SECTION_COLOR_LIST = ['#cfe7f6', '#f5c94c', '#2c9a6f', '#d34b4b', '#123a5a'];
 const STORAGE_KEY = 'bspAgusanReact';
+const AUTH_STORAGE_KEY = 'bspAgusanAuth_v2';
+const CURRENT_AUTH_SESSION_VERSION = 2;
 const EMPTY = { divisions: DEFAULT_DIVISIONS, districts: {}, schools: {}, records: [] };
 const DEFAULT_ACCOUNT_PASSWORD = 'Mabuhayscouts!2026';
 const VIEWER_ACCOUNT_PASSWORD = 'Viewer!2026';
@@ -102,8 +104,15 @@ function EmptyChart() { return <div className="empty-chart">No data available ye
 
 const getStoredUser = () => {
   try {
-    const saved = JSON.parse(localStorage.getItem('bspAgusanAuth') || 'null');
-    return saved && AUTH_USERS[saved.email] ? AUTH_USERS[saved.email] : null;
+    // Invalidate and clear any old/previous sessions from all devices
+    localStorage.removeItem('bspAgusanAuth');
+
+    const saved = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null');
+    if (!saved || saved.sessionVersion !== CURRENT_AUTH_SESSION_VERSION) {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      return null;
+    }
+    return AUTH_USERS[saved.email] ? AUTH_USERS[saved.email] : null;
   } catch {
     return null;
   }
@@ -149,8 +158,12 @@ export default function App() {
 
   useEffect(() => {
     if (authUser) {
-      localStorage.setItem('bspAgusanAuth', JSON.stringify(authUser));
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+        ...authUser,
+        sessionVersion: CURRENT_AUTH_SESSION_VERSION
+      }));
     } else {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
       localStorage.removeItem('bspAgusanAuth');
     }
   }, [authUser]);
@@ -543,6 +556,8 @@ export default function App() {
 
   function handleLogout() {
     setAuthUser(null);
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem('bspAgusanAuth');
     setPage('dashboard');
   }
 
