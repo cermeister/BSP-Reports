@@ -32,7 +32,7 @@ const STORAGE_KEY = 'bspAgusanReact';
 const AUTH_STORAGE_KEY = 'bspAgusanAuth_v2';
 const CURRENT_AUTH_SESSION_VERSION = 2;
 const EMPTY = { divisions: DEFAULT_DIVISIONS, districts: {}, schools: {}, records: [] };
-const DEFAULT_ACCOUNT_PASSWORD = 'Mabuhayscouts!2026';
+const DEFAULT_ACCOUNT_PASSWORD = 'Caciahmarie!2026';
 const VIEWER_ACCOUNT_PASSWORD = 'Viewer!2026';
 const AUTH_USERS = {
   'christian@bspagusancouncil.com': { email: 'christian@bspagusancouncil.com', role: 'admin', password: DEFAULT_ACCOUNT_PASSWORD },
