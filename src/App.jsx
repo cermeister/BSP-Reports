@@ -156,6 +156,7 @@ export default function App() {
   const [selectedMonth, setSelectedMonth] = useState('to-date');
   const [query, setQuery] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
+  const [filterUnassignedOnly, setFilterUnassignedOnly] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [chartDetail, setChartDetail] = useState(null);
@@ -278,6 +279,21 @@ export default function App() {
   }, [db]);
 
   const records = db.records || [];
+  const unassignedLeaderRecords = records
+    .map(r => {
+      const totalLeaders = Number(r.leaders || 0);
+      const assigned = leaderSectionsOf(r);
+      const unassigned = totalLeaders - assigned;
+      if (unassigned <= 0) return null;
+      return {
+        ...r,
+        totalLeaders,
+        assigned,
+        unassigned
+      };
+    })
+    .filter(Boolean);
+  const totalUnassignedLeaders = unassignedLeaderRecords.reduce((sum, r) => sum + r.unassigned, 0);
   const validationIssues = records
     .map(r => {
       const scoutTotal = scoutsOf(r);
@@ -555,10 +571,11 @@ export default function App() {
     return match ? Number(match.join('')) : Number.MAX_SAFE_INTEGER;
   };
 
-  const filteredRecords = records.filter(r =>
-    (!divisionFilter || r.division === divisionFilter) &&
-    [r.school, r.district, r.receipt, r.aur, r.division].join(' ').toLowerCase().includes(query.toLowerCase())
-  ).sort((a,b) => {
+  const filteredRecords = records.filter(r => {
+    if (divisionFilter && r.division !== divisionFilter) return false;
+    if (filterUnassignedOnly && (Number(r.leaders || 0) <= leaderSectionsOf(r) || Number(r.leaders || 0) === 0)) return false;
+    return [r.school, r.district, r.receipt, r.aur, r.division].join(' ').toLowerCase().includes(query.toLowerCase());
+  }).sort((a,b) => {
     const invoiceDiff = invoiceNumberValue(a.receipt) - invoiceNumberValue(b.receipt);
     if (invoiceDiff !== 0) return invoiceDiff;
     return (b.date || '').localeCompare(a.date || '');
@@ -652,6 +669,27 @@ export default function App() {
         <span className={`connection-pill ${connectionInfo.connected ? 'online' : 'offline'}`}>
           {connectionInfo.connected ? 'Supabase connected' : 'Local storage mode'}
         </span>
+        {unassignedLeaderRecords.length > 0 && (
+          <button
+            type="button"
+            className="btn outline"
+            style={{
+              background: '#fffbeb',
+              borderColor: '#fcd34d',
+              color: '#92400e',
+              padding: '7px 11px',
+              fontSize: '11px',
+              fontWeight: 700
+            }}
+            onClick={() => {
+              setFilterUnassignedOnly(true);
+              setPage('registrations');
+            }}
+            title="Click to view registrations with unassigned unit leaders"
+          >
+            ⚠️ {unassignedLeaderRecords.length} Unassigned ({totalUnassignedLeaders} Leaders)
+          </button>
+        )}
         <button className="btn light" onClick={backup}><Download size={16}/> Backup</button>
         {isAdmin && <label className="btn light file-button"><Upload size={16}/> Import<input type="file" accept=".json" onChange={importBackup}/></label>}
         <button className="btn gold" onClick={printPage}><Printer size={16}/> Print</button>
@@ -662,12 +700,104 @@ export default function App() {
     <div className="app-layout">
       <aside className={`sidebar ${mobileNav ? 'open' : ''}`}>
         <div className="side-label">WORKSPACE</div>
-        {navItems.map(([id, label, Icon]) => <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} onClick={() => navigate(id)}><Icon size={18}/>{label}</button>)}
+        {navItems.map(([id, label, Icon]) => (
+          <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} onClick={() => navigate(id)}>
+            <Icon size={18}/>
+            {label}
+            {id === 'registrations' && unassignedLeaderRecords.length > 0 && (
+              <span style={{
+                marginLeft: 'auto',
+                background: '#fef3c7',
+                color: '#92400e',
+                border: '1px solid #fde68a',
+                borderRadius: '10px',
+                fontSize: '10px',
+                padding: '1px 6px',
+                fontWeight: 700
+              }}>
+                {unassignedLeaderRecords.length}
+              </span>
+            )}
+          </button>
+        ))}
         <div className="sidebar-note"><b>BSP Agusan Council</b><span>Registration data workspace</span></div>
       </aside>
       <main className="content">
         {page === 'dashboard' && <section className="page">
           <div className="page-heading"><div><h1>Council Overview</h1><p>Registration performance, membership distribution, and collections.</p></div><div className="header-controls"><select className="control year-select" value={year} onChange={e => { setYear(e.target.value); if (e.target.value === 'all') setSelectedMonth('all'); else setSelectedMonth('to-date'); }}><option value="all">All years</option>{yearOptions.map(y => <option key={y}>{y}</option>)}</select><select className="control" value={dashboardDivision} onChange={e => setDashboardDivision(e.target.value)}><option value="all">All divisions</option>{db.divisions.map(d => <option key={d} value={d}>{d}</option>)}</select><select className="control" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} disabled={year === 'all'}><option value="all">All months</option><option value="to-date">From January to current month</option>{monthOptions.filter(m => m !== 'all').map(month => <option key={month} value={month}>{new Date(`${year}-${month}-01`).toLocaleDateString('en-PH', { month: 'long' })}</option>)}</select></div></div>
+          {unassignedLeaderRecords.length > 0 && (
+            <Panel
+              title={`⚠️ Action Required: ${fmt(totalUnassignedLeaders)} Unit Leaders Unassigned to Sections`}
+              subtitle={`${unassignedLeaderRecords.length} school registration(s) have unit leaders recorded without a section assignment. Click "Assign Sections" below to categorize them.`}
+              action={
+                <button
+                  type="button"
+                  className="btn gold"
+                  style={{ padding: '6px 12px', fontSize: '11px' }}
+                  onClick={() => {
+                    setFilterUnassignedOnly(true);
+                    setPage('registrations');
+                  }}
+                >
+                  View in Registrations ({unassignedLeaderRecords.length})
+                </button>
+              }
+            >
+              <div className="table-wrap" style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>School / Institution</th>
+                      <th>Receipt / Invoice</th>
+                      <th>Division</th>
+                      <th>District</th>
+                      <th>Date</th>
+                      <th>Total Leaders</th>
+                      <th>Assigned</th>
+                      <th>Unassigned</th>
+                      <th className="no-print">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unassignedLeaderRecords.map(r => (
+                      <tr key={r.id}>
+                        <td><b>{r.school}</b></td>
+                        <td>{r.receipt}</td>
+                        <td>{r.division}</td>
+                        <td>{r.district}</td>
+                        <td>{r.date}</td>
+                        <td>{fmt(r.totalLeaders)}</td>
+                        <td>{fmt(r.assigned)}</td>
+                        <td>
+                          <span style={{
+                            background: '#fee2e2',
+                            color: '#991b1b',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontWeight: 700,
+                            fontSize: '11px',
+                            display: 'inline-block'
+                          }}>
+                            {fmt(r.unassigned)} unassigned
+                          </span>
+                        </td>
+                        <td className="no-print">
+                          <button
+                            type="button"
+                            className="btn gold"
+                            style={{ padding: '4px 10px', fontSize: '11px', whiteSpace: 'nowrap' }}
+                            onClick={() => editRecord(r)}
+                          >
+                            <Pencil size={12}/> Assign Sections
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Panel>
+          )}
           <div className="metric-grid">
             <Metric label="Total Registered Scouts" value={fmt(totals.scouts)} note="Across selected period" icon={Users}/>
             <MetricWithGender label="Unit Leaders" total={fmt(totals.leaders)} male={fmt(totals.leaderMale)} female={fmt(totals.leaderFemale)} note="Registered leaders" icon={UserRound}/>
@@ -803,6 +933,27 @@ export default function App() {
               <Field label="Gender Count Check"><input readOnly value={Number(form.male)+Number(form.female) === formScouts ? 'Matched' : `Difference: ${Math.abs(formScouts-Number(form.male)-Number(form.female))}`}/></Field>
             </FormSection>
             <FormSection title="3. Unit Leaders & Institutional Heads">
+              {Number(form.leaders || 0) > formLeaderSections && (
+                <div style={{
+                  gridColumn: '1 / -1',
+                  background: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  borderRadius: '8px',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '8px'
+                }}>
+                  <div style={{ fontSize: '13px', color: '#92400e' }}>
+                    ⚠️ <strong>{Number(form.leaders || 0) - formLeaderSections} Unit Leader{Number(form.leaders || 0) - formLeaderSections > 1 ? 's' : ''} not yet assigned to a section.</strong> Please enter how many belong to Langkay, Kawan, Troop, Outfit, or Circle below.
+                  </div>
+                  <span style={{ fontSize: '12px', color: '#b45309', fontWeight: 700 }}>
+                    {formLeaderSections} of {form.leaders} assigned
+                  </span>
+                </div>
+              )}
               {LEADER_SECTIONS.map(([key, label]) => (
                 <Field key={key} label={label}>
                   <input
@@ -814,7 +965,9 @@ export default function App() {
                       setForm(prev => {
                         const next = { ...prev, [key]: val };
                         const sum = LEADER_SECTIONS.reduce((s, [k]) => s + Number(k === key ? val : (next[k] || 0)), 0);
-                        return { ...next, leaders: sum };
+                        const currentLeaders = Number(prev.leaders || 0);
+                        const newLeaders = sum > currentLeaders || currentLeaders === 0 ? sum : currentLeaders;
+                        return { ...next, leaders: newLeaders };
                       });
                     }}
                   />
@@ -824,15 +977,14 @@ export default function App() {
                 <input
                   type="number"
                   min="0"
-                  value={formLeaders}
+                  value={form.leaders}
                   onChange={e => setField('leaders', e.target.value)}
-                  readOnly={formLeaderSections > 0}
-                  title={formLeaderSections > 0 ? "Automatically calculated from section leaders" : "Enter unit leaders"}
+                  title="Total unit leaders recorded"
                 />
               </Field>
               <Field label="Male Unit Leaders (all sections)"><input type="number" min="0" value={form.leaderMale} onChange={e => setField('leaderMale',e.target.value)}/></Field>
               <Field label="Female Unit Leaders (all sections)"><input type="number" min="0" value={form.leaderFemale} onChange={e => setField('leaderFemale',e.target.value)}/></Field>
-              <Field label="Unit Leader Gender Check"><input readOnly value={Number(form.leaderMale) + Number(form.leaderFemale) === Number(formLeaders || 0) ? 'Matched' : `Difference: ${Math.abs(Number(formLeaders || 0)-Number(form.leaderMale)-Number(form.leaderFemale))}`}/></Field>
+              <Field label="Unit Leader Gender Check"><input readOnly value={Number(form.leaderMale) + Number(form.leaderFemale) === Number(form.leaders || 0) ? 'Matched' : `Difference: ${Math.abs(Number(form.leaders || 0)-Number(form.leaderMale)-Number(form.leaderFemale))}`}/></Field>
               <Field label="Number of Institutional Heads"><input type="number" min="0" value={form.heads} onChange={e => setField('heads',e.target.value)}/></Field>
               <Field label="Male Institutional Heads"><input type="number" min="0" value={form.headMale} onChange={e => setField('headMale',e.target.value)}/></Field>
               <Field label="Female Institutional Heads"><input type="number" min="0" value={form.headFemale} onChange={e => setField('headFemale',e.target.value)}/></Field>
@@ -853,9 +1005,57 @@ export default function App() {
 
         {page === 'registrations' && <section className="page">
           <div className="page-heading"><div><h1>Registration Records</h1><p>Search, edit, and manage encoded school registrations.</p></div><button className="btn gold" onClick={() => {resetForm();setPage('form')}}><PlusCircle size={16}/> Add Registration</button></div>
-          <div className="toolbar"><div className="search-box"><Search size={16}/><input placeholder="Search school, district, receipt..." value={query} onChange={e => setQuery(e.target.value)}/></div><select className="control" value={divisionFilter} onChange={e => setDivisionFilter(e.target.value)}><option value="">All divisions</option>{db.divisions.map(d => <option key={d}>{d}</option>)}</select><button className="btn outline" onClick={exportCsv}><Download size={15}/> Export CSV</button></div>
+          <div className="toolbar">
+            <div className="search-box">
+              <Search size={16}/>
+              <input placeholder="Search school, district, receipt..." value={query} onChange={e => setQuery(e.target.value)}/>
+            </div>
+            <select className="control" value={divisionFilter} onChange={e => setDivisionFilter(e.target.value)}>
+              <option value="">All divisions</option>
+              {db.divisions.map(d => <option key={d}>{d}</option>)}
+            </select>
+            {unassignedLeaderRecords.length > 0 && (
+              <button
+                type="button"
+                className={`chip ${filterUnassignedOnly ? 'selected' : ''}`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: filterUnassignedOnly ? '#92400e' : '#fffbeb',
+                  color: filterUnassignedOnly ? '#fff' : '#92400e',
+                  borderColor: '#fde68a',
+                  fontWeight: 700
+                }}
+                onClick={() => setFilterUnassignedOnly(!filterUnassignedOnly)}
+              >
+                <span>⚠️</span>
+                <span>Unassigned Sections ({unassignedLeaderRecords.length})</span>
+              </button>
+            )}
+            <button className="btn outline" onClick={exportCsv}><Download size={15}/> Export CSV</button>
+          </div>
           <div className="table-wrap"><table><thead><tr><th>Date</th><th>Division</th><th>District</th><th>School</th><th>Scouts</th><th>Leaders</th><th>Receipt / Invoice</th><th>Paid</th><th className="no-print">Actions</th></tr></thead><tbody>
-            {filteredRecords.length ? filteredRecords.map(r => <tr key={r.id}><td>{r.date}</td><td>{r.division}</td><td>{r.district}</td><td><b>{r.school}</b></td><td>{fmt(scoutsOf(r))}</td><td>{fmt(r.leaders)}</td><td>{r.receipt}</td><td>{money(r.paid)}</td><td className="actions-cell no-print"><button className="table-action" onClick={() => editRecord(r)} aria-label="Edit"><Pencil size={15}/></button><button className="table-action delete" onClick={() => deleteRecord(r.id)} aria-label="Delete"><Trash2 size={15}/></button></td></tr>) : <tr><td colSpan="9" className="empty-row">No registration records found.</td></tr>}
+            {filteredRecords.length ? filteredRecords.map(r => <tr key={r.id}><td>{r.date}</td><td>{r.division}</td><td>{r.district}</td><td><b>{r.school}</b></td><td>{fmt(scoutsOf(r))}</td><td>{fmt(r.leaders)}{Number(r.leaders || 0) > leaderSectionsOf(r) && (
+              <button
+                type="button"
+                style={{
+                  marginLeft: '6px',
+                  background: '#fee2e2',
+                  color: '#991b1b',
+                  border: '1px solid #fecaca',
+                  padding: '2px 7px',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+                title={`${Number(r.leaders || 0) - leaderSectionsOf(r)} unassigned unit leaders. Click to assign sections.`}
+                onClick={(e) => { e.stopPropagation(); editRecord(r); }}
+              >
+                ⚠️ Assign ({Number(r.leaders || 0) - leaderSectionsOf(r)})
+              </button>
+            )}</td><td>{r.receipt}</td><td>{money(r.paid)}</td><td className="actions-cell no-print"><button className="table-action" onClick={() => editRecord(r)} aria-label="Edit"><Pencil size={15}/></button><button className="table-action delete" onClick={() => deleteRecord(r.id)} aria-label="Delete"><Trash2 size={15}/></button></td></tr>) : <tr><td colSpan="9" className="empty-row">No registration records found.</td></tr>}
           </tbody></table></div>
         </section>}
 
