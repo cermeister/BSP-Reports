@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, Legend
+  PieChart, Pie, Cell, LineChart, Line, Legend, LabelList
 } from 'recharts';
 import {
   LayoutDashboard, ClipboardList, PlusCircle, FileText, Settings,
@@ -19,6 +19,14 @@ const SECTIONS = [
   ['kid', 'Kid Scouts'], ['kab', 'Kab Scouts'], ['boy', 'Boy Scouts'],
   ['senior', 'Senior Scouts'], ['rover', 'Rover Scouts']
 ];
+const LEADER_SECTIONS = [
+  ['langkayLeader', 'Langkay Leader (Kid Scouts)'],
+  ['kawanLeader', 'Kawan Leader (Kab Scouts)'],
+  ['troopLeader', 'Troop Leader (Boy Scouts)'],
+  ['outfitAdvisor', 'Outfit Advisor (Senior Scouts)'],
+  ['circleManager', 'Circle Manager (Rover Scouts)']
+];
+const leaderSectionsOf = r => LEADER_SECTIONS.reduce((sum, [key]) => sum + Number(r[key] || 0), 0);
 const COLORS = ['#174a78', '#e4ad37', '#26936d', '#8a6bb1', '#df7954', '#4b9eae', '#8796a8'];
 const SECTION_COLORS = {
   'Kid Scouts': '#cfe7f6',
@@ -45,6 +53,7 @@ const fmt = n => new Intl.NumberFormat('en-PH').format(Number(n || 0));
 const scoutsOf = r => SECTIONS.reduce((sum, [key]) => sum + Number(r[key] || 0), 0);
 const totalsOf = records => records.reduce((a, r) => {
   SECTIONS.forEach(([key]) => a[key] += Number(r[key] || 0));
+  LEADER_SECTIONS.forEach(([key]) => a[key] += Number(r[key] || 0));
   a.scouts += scoutsOf(r);
   a.leaders += Number(r.leaders || 0);
   a.heads += Number(r.heads || 0);
@@ -73,10 +82,20 @@ const totalsOf = records => records.reduce((a, r) => {
   kab: 0,
   boy: 0,
   senior: 0,
-  rover: 0
+  rover: 0,
+  langkayLeader: 0,
+  kawanLeader: 0,
+  troopLeader: 0,
+  outfitAdvisor: 0,
+  circleManager: 0
 });
 const normalizeRecord = record => ({
   ...record,
+  langkayLeader: record?.langkayLeader ?? 0,
+  kawanLeader: record?.kawanLeader ?? 0,
+  troopLeader: record?.troopLeader ?? 0,
+  outfitAdvisor: record?.outfitAdvisor ?? 0,
+  circleManager: record?.circleManager ?? 0,
   leaderMale: record?.leaderMale ?? 0,
   leaderFemale: record?.leaderFemale ?? 0,
   headMale: record?.headMale ?? 0,
@@ -97,8 +116,8 @@ function Metric({ label, value, note, icon: Icon }) {
 function MetricWithGender({ label, total, male, female, note, icon: Icon }) {
   return <article className="metric metric-with-gender"><div className="metric-top"><span>{label}</span><Icon size={18}/></div><strong>{total}</strong><div className="metric-gender-row"><span>Male: {male}</span><span>Female: {female}</span></div><small>{note}</small></article>;
 }
-function Panel({ title, subtitle, children, className = '' }) {
-  return <section className={`panel ${className}`}><div className="panel-heading"><div><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div></div>{children}</section>;
+function Panel({ title, subtitle, action, children, className = '' }) {
+  return <section className={`panel ${className}`}><div className="panel-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}><div><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div>{action && <div>{action}</div>}</div>{children}</section>;
 }
 function EmptyChart() { return <div className="empty-chart">No data available yet. Add registration records to generate this chart.</div>; }
 
@@ -140,11 +159,14 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [chartDetail, setChartDetail] = useState(null);
+  const [leaderChartType, setLeaderChartType] = useState('bar');
   const [connectionInfo, setConnectionInfo] = useState(getSupabaseConfig());
   const [form, setForm] = useState({
     division: DEFAULT_DIVISIONS[0], district: '', school: '', date: today(),
     receipt: '', aur: '', kid: 0, kab: 0, boy: 0, senior: 0, rover: 0,
-    male: 0, female: 0, leaders: 0, heads: 0, leaderMale: 0, leaderFemale: 0, headMale: 0, headFemale: 0,
+    male: 0, female: 0,
+    langkayLeader: 0, kawanLeader: 0, troopLeader: 0, outfitAdvisor: 0, circleManager: 0,
+    leaders: 0, heads: 0, leaderMale: 0, leaderFemale: 0, headMale: 0, headFemale: 0,
     scoutFee: 0, leaderFee: 0, institutionFee: 0, paid: 0, paymentNotes: ''
   });
 
@@ -329,6 +351,14 @@ export default function App() {
     color: SECTION_COLORS[label] || '#174a78',
     records: dashboardRecords.filter(r => Number(r[key] || 0) > 0)
   }));
+  const leaderSectionData = LEADER_SECTIONS.map(([key, label], idx) => ({
+    name: label.replace(/ \(.*\)/, ''),
+    fullName: label,
+    total: totals[key] || 0,
+    value: totals[key] || 0,
+    color: SECTION_COLOR_LIST[idx] || '#174a78',
+    records: dashboardRecords.filter(r => Number(r[key] || 0) > 0)
+  }));
   const genderData = [
     { name: 'Male Scouts', value: totals.male, records: dashboardRecords.filter(r => Number(r.male || 0) > 0) },
     { name: 'Female Scouts', value: totals.female, records: dashboardRecords.filter(r => Number(r.female || 0) > 0) }
@@ -383,16 +413,22 @@ export default function App() {
 
   function setField(key, value) { setForm(prev => ({ ...prev, [key]: value })); }
   const formScouts = scoutsOf(form);
+  const formLeaderSections = leaderSectionsOf(form);
+  const formLeaders = formLeaderSections > 0 ? formLeaderSections : Number(form.leaders || 0);
   const expected = formScouts * Number(form.scoutFee || 0)
-    + Number(form.leaders || 0) * Number(form.leaderFee || 0)
+    + Number(formLeaders) * Number(form.leaderFee || 0)
     + Number(form.heads || 0) * Number(form.institutionFee || 0);
 
   function resetForm() {
     setEditingId(null);
-    setForm({ division: db.divisions[0] || '', district: '', school: '', date: today(), receipt: '', aur: '',
-      kid: 0, kab: 0, boy: 0, senior: 0, rover: 0, male: 0, female: 0, leaders: 0, leaderMale: 0,
-      leaderFemale: 0, heads: 0, headMale: 0, headFemale: 0, scoutFee: 0, leaderFee: 0,
-      institutionFee: 0, paid: 0, paymentNotes: '' });
+    setForm({
+      division: db.divisions[0] || '', district: '', school: '', date: today(), receipt: '', aur: '',
+      kid: 0, kab: 0, boy: 0, senior: 0, rover: 0, male: 0, female: 0,
+      langkayLeader: 0, kawanLeader: 0, troopLeader: 0, outfitAdvisor: 0, circleManager: 0,
+      leaders: 0, leaderMale: 0, leaderFemale: 0,
+      heads: 0, headMale: 0, headFemale: 0,
+      scoutFee: 0, leaderFee: 0, institutionFee: 0, paid: 0, paymentNotes: ''
+    });
   }
   function saveRecord(e) {
     if (!isAdmin) {
@@ -400,8 +436,9 @@ export default function App() {
       return;
     }
     e.preventDefault();
-    const record = { ...form, id: editingId || crypto.randomUUID(), expected };
-    const leaderGenderMismatch = Number(form.leaders) !== Number(form.leaderMale) + Number(form.leaderFemale);
+    const finalLeaders = formLeaderSections > 0 ? formLeaderSections : Number(form.leaders || 0);
+    const record = { ...form, leaders: finalLeaders, id: editingId || crypto.randomUUID(), expected };
+    const leaderGenderMismatch = Number(finalLeaders) !== Number(form.leaderMale) + Number(form.leaderFemale);
     const headGenderMismatch = Number(form.heads) !== Number(form.headMale) + Number(form.headFemale);
     if ((Number(form.male) + Number(form.female) !== formScouts || leaderGenderMismatch || headGenderMismatch) &&
       !window.confirm('One or more gender counts do not equal the total registered count. Save anyway?')) return;
@@ -424,6 +461,11 @@ export default function App() {
     }
     setForm({
       ...r,
+      langkayLeader: r.langkayLeader ?? 0,
+      kawanLeader: r.kawanLeader ?? 0,
+      troopLeader: r.troopLeader ?? 0,
+      outfitAdvisor: r.outfitAdvisor ?? 0,
+      circleManager: r.circleManager ?? 0,
       leaderMale: r.leaderMale ?? 0,
       leaderFemale: r.leaderFemale ?? 0,
       headMale: r.headMale ?? 0,
@@ -498,7 +540,7 @@ export default function App() {
     reader.readAsText(file);
   }
   function exportCsv() {
-    const cols = ['date','division','district','school','kid','kab','boy','senior','rover','male','female','leaders','leaderMale','leaderFemale','heads','headMale','headFemale','receipt','aur','scoutFee','leaderFee','institutionFee','expected','paid','paymentNotes'];
+    const cols = ['date','division','district','school','kid','kab','boy','senior','rover','male','female','langkayLeader','kawanLeader','troopLeader','outfitAdvisor','circleManager','leaders','leaderMale','leaderFemale','heads','headMale','headFemale','receipt','aur','scoutFee','leaderFee','institutionFee','expected','paid','paymentNotes'];
     const csv = [cols.join(','), ...records.map(r => cols.map(k => `"${String(r[k] ?? '').replaceAll('"','""')}"`).join(','))].join('\n');
     download(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'BSP-Agusan-Registrations.csv');
   }
@@ -643,12 +685,98 @@ export default function App() {
             <Panel title="Unit Leaders & Institutional Heads by Gender" subtitle="Breakdown of registered leader and head counts"><div className="two-col" style={{ gridTemplateColumns: '1fr 1fr' }}><ChartPie data={unitLeaderGenderData} onSelect={openChartDetail}/><ChartPie data={institutionalHeadGenderData} onSelect={openChartDetail}/></div></Panel>
           </div>
           <div className="two-col">
-            <Panel title="Scout Registration Breakdown" subtitle="Council-wide totals by section"><div className="chart-box tall"><ResponsiveContainer width="100%" height="100%"><BarChart data={sectionData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis allowDecimals={false}/><Tooltip formatter={v => fmt(v)}/><Bar dataKey="total" radius={[5,5,0,0]} onClick={item => openChartDetail(item)}>{sectionData.map((entry, index) => <Cell key={entry.name} fill={SECTION_COLOR_LIST[index] || '#174a78'} />)}</Bar></BarChart></ResponsiveContainer></div></Panel>
-            <Panel title="Institutional Heads by Division" subtitle="Share of registered heads"><ChartPie data={db.divisions.map(name => { const recordsForDivision = dashboardRecords.filter(r => r.division === name); return { name: name.replace(' Division', ''), value: recordsForDivision.reduce((s, r) => s + Number(r.heads || 0), 0), records: recordsForDivision }; })} onSelect={openChartDetail}/></Panel>
+            <Panel title="Scout Registration Breakdown" subtitle="Council-wide totals by section">
+              <div className="chart-box tall">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={sectionData} margin={{ top: 22, right: 10, left: 0, bottom: 15 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false}/>
+                    <XAxis dataKey="name" tick={{fontSize:11}}/>
+                    <YAxis allowDecimals={false}/>
+                    <Tooltip formatter={v => fmt(v)}/>
+                    <Bar dataKey="total" radius={[5,5,0,0]} onClick={item => openChartDetail(item)}>
+                      {sectionData.map((entry, index) => <Cell key={entry.name} fill={SECTION_COLOR_LIST[index] || '#174a78'} />)}
+                      <LabelList dataKey="total" position="top" formatter={v => (v > 0 ? fmt(v) : '0')} style={{ fill: '#173b5d', fontSize: 11, fontWeight: 700 }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Panel>
+            <Panel
+              title="Unit Leaders Breakdown by Section"
+              subtitle="Council-wide leaders by section role"
+              action={
+                <div style={{ display: 'inline-flex', gap: '3px', background: '#edf3f8', padding: '2px', borderRadius: '14px' }}>
+                  <button
+                    type="button"
+                    className={`chip ${leaderChartType === 'bar' ? 'selected' : ''}`}
+                    style={{ padding: '3px 8px', fontSize: '10px', border: 0, margin: 0 }}
+                    onClick={() => setLeaderChartType('bar')}
+                  >
+                    Bar
+                  </button>
+                  <button
+                    type="button"
+                    className={`chip ${leaderChartType === 'pie' ? 'selected' : ''}`}
+                    style={{ padding: '3px 8px', fontSize: '10px', border: 0, margin: 0 }}
+                    onClick={() => setLeaderChartType('pie')}
+                  >
+                    Donut
+                  </button>
+                </div>
+              }
+            >
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                {leaderSectionData.map(item => (
+                  <div
+                    key={item.name}
+                    onClick={() => openChartDetail(item)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '3px 8px',
+                      borderRadius: '5px',
+                      background: '#f4f7fb',
+                      border: '1px solid #e1e8f0',
+                      fontSize: '11px',
+                      cursor: 'pointer'
+                    }}
+                    title="Click to view details"
+                  >
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: item.color }} />
+                    <span style={{ color: '#4a6075' }}>{item.name}:</span>
+                    <b style={{ color: '#102d4f' }}>{fmt(item.total)}</b>
+                  </div>
+                ))}
+              </div>
+              {leaderChartType === 'bar' ? (
+                <div className="chart-box tall">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={leaderSectionData} margin={{ top: 22, right: 10, left: 0, bottom: 15 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip formatter={v => `${fmt(v)} Leaders`} />
+                      <Bar dataKey="total" radius={[5, 5, 0, 0]} onClick={item => openChartDetail(item)}>
+                        {leaderSectionData.map(entry => <Cell key={entry.name} fill={entry.color} />)}
+                        <LabelList
+                          dataKey="total"
+                          position="top"
+                          formatter={v => (v > 0 ? fmt(v) : '0')}
+                          style={{ fill: '#173b5d', fontSize: 11, fontWeight: 700 }}
+                        />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <ChartPie data={leaderSectionData} onSelect={openChartDetail} />
+              )}
+            </Panel>
           </div>
           <div className="two-col">
+            <Panel title="Institutional Heads by Division" subtitle="Share of registered heads"><ChartPie data={db.divisions.map(name => { const recordsForDivision = dashboardRecords.filter(r => r.division === name); return { name: name.replace(' Division', ''), value: recordsForDivision.reduce((s, r) => s + Number(r.heads || 0), 0), records: recordsForDivision }; })} onSelect={openChartDetail}/></Panel>
             <Panel title="Registration Trend" subtitle={selectedMonth === 'all' ? 'Scouts registered by month' : selectedMonth === 'to-date' ? `Scouts registered from January to ${new Date(`${year}-${String(currentMonth).padStart(2,'0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}` : `Scouts registered in ${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="scouts" stroke="#174a78" strokeWidth={3} dot={{fill:'#e4ad37',r:4}} onClick={item => openChartDetail(item)} /></LineChart></ResponsiveContainer></div></Panel>
-            <Panel title="Monthly Collections" subtitle={selectedMonth === 'all' ? 'Recorded payments by month' : selectedMonth === 'to-date' ? `Payments recorded from January to ${new Date(`${year}-${String(currentMonth).padStart(2,'0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}` : `Payments recorded in ${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={revenueData}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis/><Tooltip formatter={v => money(v)}/><Bar dataKey="collections" fill="#26936d" radius={[5,5,0,0]} onClick={item => openChartDetail(item)} /></BarChart></ResponsiveContainer></div></Panel>
           </div>
           <Panel title="Division Drill-down" subtitle="Select a division to view district-level scout and leader distribution.">
             <div className="chip-row">{db.divisions.map(d => <button key={d} className={`chip ${selectedDivision === d ? 'selected' : ''}`} onClick={() => { setDashboardDivision(d); setSelectedDivision(d); }}>{d}</button>)}</div>
@@ -675,10 +803,36 @@ export default function App() {
               <Field label="Gender Count Check"><input readOnly value={Number(form.male)+Number(form.female) === formScouts ? 'Matched' : `Difference: ${Math.abs(formScouts-Number(form.male)-Number(form.female))}`}/></Field>
             </FormSection>
             <FormSection title="3. Unit Leaders & Institutional Heads">
-              <Field label="Number of Unit Leaders"><input type="number" min="0" value={form.leaders} onChange={e => setField('leaders',e.target.value)}/></Field>
-              <Field label="Male Unit Leaders"><input type="number" min="0" value={form.leaderMale} onChange={e => setField('leaderMale',e.target.value)}/></Field>
-              <Field label="Female Unit Leaders"><input type="number" min="0" value={form.leaderFemale} onChange={e => setField('leaderFemale',e.target.value)}/></Field>
-              <Field label="Unit Leader Gender Check"><input readOnly value={Number(form.leaderMale) + Number(form.leaderFemale) === Number(form.leaders || 0) ? 'Matched' : `Difference: ${Math.abs(Number(form.leaders || 0)-Number(form.leaderMale)-Number(form.leaderFemale))}`}/></Field>
+              {LEADER_SECTIONS.map(([key, label]) => (
+                <Field key={key} label={label}>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form[key]}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setForm(prev => {
+                        const next = { ...prev, [key]: val };
+                        const sum = LEADER_SECTIONS.reduce((s, [k]) => s + Number(k === key ? val : (next[k] || 0)), 0);
+                        return { ...next, leaders: sum };
+                      });
+                    }}
+                  />
+                </Field>
+              ))}
+              <Field label="Total Unit Leaders">
+                <input
+                  type="number"
+                  min="0"
+                  value={formLeaders}
+                  onChange={e => setField('leaders', e.target.value)}
+                  readOnly={formLeaderSections > 0}
+                  title={formLeaderSections > 0 ? "Automatically calculated from section leaders" : "Enter unit leaders"}
+                />
+              </Field>
+              <Field label="Male Unit Leaders (all sections)"><input type="number" min="0" value={form.leaderMale} onChange={e => setField('leaderMale',e.target.value)}/></Field>
+              <Field label="Female Unit Leaders (all sections)"><input type="number" min="0" value={form.leaderFemale} onChange={e => setField('leaderFemale',e.target.value)}/></Field>
+              <Field label="Unit Leader Gender Check"><input readOnly value={Number(form.leaderMale) + Number(form.leaderFemale) === Number(formLeaders || 0) ? 'Matched' : `Difference: ${Math.abs(Number(formLeaders || 0)-Number(form.leaderMale)-Number(form.leaderFemale))}`}/></Field>
               <Field label="Number of Institutional Heads"><input type="number" min="0" value={form.heads} onChange={e => setField('heads',e.target.value)}/></Field>
               <Field label="Male Institutional Heads"><input type="number" min="0" value={form.headMale} onChange={e => setField('headMale',e.target.value)}/></Field>
               <Field label="Female Institutional Heads"><input type="number" min="0" value={form.headFemale} onChange={e => setField('headFemale',e.target.value)}/></Field>
@@ -710,7 +864,10 @@ export default function App() {
           <div className="notice">Reports are generated from records saved in this browser. Use Backup regularly to protect your data.</div>
           <div className="metric-grid"><Metric label="Total Scouts" value={fmt(totalsOf(records).scouts)} note="All encoded years" icon={Users}/><MetricWithGender label="Unit Leaders" total={fmt(totalsOf(records).leaders)} male={fmt(totalsOf(records).leaderMale)} female={fmt(totalsOf(records).leaderFemale)} note="All divisions" icon={UserRound}/><MetricWithGender label="Institutional Heads" total={fmt(totalsOf(records).heads)} male={fmt(totalsOf(records).headMale)} female={fmt(totalsOf(records).headFemale)} note="All divisions" icon={School}/><Metric label="Registrations" value={fmt(records.length)} note="School submissions" icon={School}/><Metric label="Collections" value={money(totalsOf(records).paid)} note="Actual recorded payments" icon={PhilippinePeso}/></div>
           <div className="two-col"><Panel title="Scouts by Division"><ChartPie data={scoutByDivision}/></Panel><Panel title="Unit Leaders by Division"><ChartPie data={leadersByDivision}/></Panel></div>
-          <Panel title="Scout Section Summary"><div className="table-wrap"><table><thead><tr><th>Scout Section</th><th>Total Registered</th></tr></thead><tbody>{SECTIONS.map(([k,label]) => <tr key={k}><td>{label}</td><td>{fmt(totalsOf(records)[k])}</td></tr>)}<tr><th>Total Scouts</th><th>{fmt(totalsOf(records).scouts)}</th></tr></tbody></table></div></Panel>
+          <div className="two-col">
+            <Panel title="Scout Section Summary"><div className="table-wrap"><table><thead><tr><th>Scout Section</th><th>Total Registered</th></tr></thead><tbody>{SECTIONS.map(([k,label]) => <tr key={k}><td>{label}</td><td>{fmt(totalsOf(records)[k])}</td></tr>)}<tr><th>Total Scouts</th><th>{fmt(totalsOf(records).scouts)}</th></tr></tbody></table></div></Panel>
+            <Panel title="Unit Leader Section Summary"><div className="table-wrap"><table><thead><tr><th>Leader Role / Section</th><th>Total Registered</th></tr></thead><tbody>{LEADER_SECTIONS.map(([k,label]) => <tr key={k}><td>{label}</td><td>{fmt(totalsOf(records)[k])}</td></tr>)}<tr><th>Total Unit Leaders</th><th>{fmt(totalsOf(records).leaders)}</th></tr></tbody></table></div></Panel>
+          </div>
           <Panel title="Division Summary"><DivisionSummary divisions={db.divisions} records={records}/></Panel>
         </section>}
 
@@ -719,7 +876,7 @@ export default function App() {
           <div className="two-col"><Panel title="Add Division" subtitle="Create an additional division."><button className="btn gold" onClick={addDivision}><PlusCircle size={16}/> Add Division</button></Panel><Panel title="Add District" subtitle="Add a district under a selected division."><button className="btn gold" onClick={addDistrict}><PlusCircle size={16}/> Add District</button></Panel><Panel title="Add School" subtitle="Add a school under a division and district."><button className="btn gold" onClick={addSchool}><PlusCircle size={16}/> Add School</button></Panel></div>
           <Panel title="Current Divisions and Districts">{db.divisions.map(d => <div className="division-row" key={d}><b>{d}</b><span>{(db.districts[d] || []).length ? db.districts[d].join(' · ') : 'No districts added yet'}</span>{db.schools?.[d] && Object.entries(db.schools[d]).length ? <div className="school-list"><small>Schools:</small> {Object.entries(db.schools[d]).map(([district, schools]) => <div key={`${d}-${district}`}><strong>{district}:</strong> {schools.join(' · ')}</div>)}</div> : <div className="school-list"><small>No schools added yet.</small></div>}</div>)}</Panel>
         </section>}
-        {chartDetail && <div className="chart-modal-backdrop" onClick={closeChartDetail}><div className="chart-modal" onClick={e => e.stopPropagation()}><div className="chart-modal-header"><h3>{chartDetail.title}</h3><button className="chart-modal-close" onClick={closeChartDetail} aria-label="Close graph details">×</button></div><div className="chart-modal-body"><table><thead><tr><th>Invoice Number</th><th>School</th><th>Division</th><th>District</th><th>Scouts</th><th>Date</th></tr></thead><tbody>{chartDetail.records.map(record => <tr key={record.id || `${record.receipt}-${record.school}-${record.date}`}><td>{record.receipt || '—'}</td><td>{record.school || '—'}</td><td>{record.division || '—'}</td><td>{record.district || '—'}</td><td>{fmt(scoutsOf(record))}</td><td>{record.date || '—'}</td></tr>)}</tbody></table></div></div></div>}
+        {chartDetail && <div className="chart-modal-backdrop" onClick={closeChartDetail}><div className="chart-modal" onClick={e => e.stopPropagation()}><div className="chart-modal-header"><h3>{chartDetail.title}</h3><button className="chart-modal-close" onClick={closeChartDetail} aria-label="Close graph details">×</button></div><div className="chart-modal-body"><table><thead><tr><th>Invoice Number</th><th>School</th><th>Division</th><th>District</th><th>Scouts</th><th>Leaders</th><th>Date</th></tr></thead><tbody>{chartDetail.records.map(record => <tr key={record.id || `${record.receipt}-${record.school}-${record.date}`}><td>{record.receipt || '—'}</td><td>{record.school || '—'}</td><td>{record.division || '—'}</td><td>{record.district || '—'}</td><td>{fmt(scoutsOf(record))}</td><td>{fmt(record.leaders || 0)}</td><td>{record.date || '—'}</td></tr>)}</tbody></table></div></div></div>}
         <footer className="footer">BSP Agusan Council · Registration Analytics System <span>Prototype v1.0</span></footer>
       </main>
     </div>
