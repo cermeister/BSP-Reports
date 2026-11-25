@@ -72,8 +72,7 @@ const TRANSMITTAL_SECTIONS = [
 const TRANSMITTAL_BASE_ROWS = [
   { key: 'agusan-del-norte', label: 'AGUSAN DEL NORTE', match: ['agusan del norte', 'agusan del norte division'] },
   { key: 'butuan-city', label: 'BUTUAN CITY', match: ['butuan city', 'butuan city division'] },
-  { key: 'cabadbaran-city', label: 'CABADBARAN CITY', match: ['cabadbaran city', 'cabadbaran city division'] },
-  { key: 'community-institution', label: 'COMMUNITY INSTITUTION', match: ['community institution', 'community institution division', 'community'] }
+  { key: 'cabadbaran-city', label: 'CABADBARAN CITY', match: ['cabadbaran city', 'cabadbaran city division'] }
 ];
 const TRANSMITTAL_SIGNATURE_KEY = 'bspAgusanTransmittalSignature';
 const MMRR_PREPARED_SIG_KEY = 'bspAgusanMmrrPreparedSig';
@@ -586,10 +585,16 @@ export default function App() {
     const periodRecords = records.filter(r => (r.date || '').startsWith(transmittalPeriodKey));
     const normalizeDiv = v => String(v || '').trim().toLowerCase();
     const knownMatches = new Set(TRANSMITTAL_BASE_ROWS.flatMap(row => row.match));
+    const isCommunityInstitution = div => {
+      const normalized = normalizeDiv(div);
+      return normalized === 'community'
+        || normalized === 'community institution'
+        || normalized === 'community institution division';
+    };
     const extraDivisions = unique([
       ...db.divisions,
       ...periodRecords.map(r => r.division)
-    ]).filter(div => !knownMatches.has(normalizeDiv(div)));
+    ]).filter(div => !isCommunityInstitution(div) && !knownMatches.has(normalizeDiv(div)));
     const rowConfigs = [
       ...TRANSMITTAL_BASE_ROWS,
       ...extraDivisions.map(div => ({
