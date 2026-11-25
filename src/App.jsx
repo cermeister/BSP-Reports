@@ -6,7 +6,7 @@ import {
 import {
   LayoutDashboard, ClipboardList, PlusCircle, FileText, Settings,
   Download, Upload, Printer, Search, Pencil, Trash2, Users, UserRound,
-  School, PhilippinePeso, Menu, X
+  School, PhilippinePeso, Menu, X, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { supabase, getSupabaseConfig } from './lib/supabase';
 
@@ -47,7 +47,25 @@ const AUTH_USERS = {
   'staff@bspagusancouncil.com': { email: 'staff@bspagusancouncil.com', role: 'viewer', password: VIEWER_ACCOUNT_PASSWORD }
 };
 const unique = values => [...new Set((values || []).filter(Boolean))];
-const today = () => new Date().toISOString().slice(0, 10);
+const formatLocalDate = d => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+const today = () => formatLocalDate(new Date());
+const shiftDate = (dateStr, deltaDays) => {
+  const base = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date();
+  if (Number.isNaN(base.getTime())) return today();
+  base.setDate(base.getDate() + deltaDays);
+  return formatLocalDate(base);
+};
+const formatDisplayDate = dateStr => {
+  if (!dateStr) return 'All dates';
+  const parsed = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return dateStr;
+  return parsed.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+};
 const money = n => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(n || 0));
 const fmt = n => new Intl.NumberFormat('en-PH').format(Number(n || 0));
 const scoutsOf = r => SECTIONS.reduce((sum, [key]) => sum + Number(r[key] || 0), 0);
@@ -154,6 +172,11 @@ export default function App() {
     setSelectedDivision(dashboardDivision);
   }, [dashboardDivision, db.divisions]);
   const [selectedMonth, setSelectedMonth] = useState('to-date');
+  const [periodMode, setPeriodMode] = useState('monthly');
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [dateRangeStart, setDateRangeStart] = useState(today);
+  const [dateRangeEnd, setDateRangeEnd] = useState(today);
+  const [trendView, setTrendView] = useState('monthly');
   const [query, setQuery] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
   const [filterUnassignedOnly, setFilterUnassignedOnly] = useState(false);
@@ -333,17 +356,47 @@ export default function App() {
   const yearOptions = [...new Set([new Date().getFullYear(), ...records.map(r => Number((r.date || '').slice(0, 4))).filter(Boolean)])].sort((a,b) => b-a);
   const monthOptions = ['all', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
   const currentMonth = new Date().getMonth() + 1;
+  const [rangeFrom, rangeTo] = dateRangeStart && dateRangeEnd && dateRangeStart > dateRangeEnd
+    ? [dateRangeEnd, dateRangeStart]
+    : [dateRangeStart, dateRangeEnd];
   const dashboardRecords = records.filter(r => {
     if (dashboardDivision !== 'all' && r.division !== dashboardDivision) return false;
+    const recordDate = (r.date || '').slice(0, 10);
+    if (periodMode === 'daily') {
+      return selectedDate ? recordDate === selectedDate : true;
+    }
+    if (periodMode === 'range') {
+      if (!recordDate) return false;
+      if (rangeFrom && recordDate < rangeFrom) return false;
+      if (rangeTo && recordDate > rangeTo) return false;
+      return true;
+    }
     if (year === 'all') return true;
-    if (!(r.date || '').startsWith(year)) return false;
+    if (!recordDate.startsWith(year)) return false;
     if (selectedMonth === 'all') return true;
     if (selectedMonth === 'to-date') {
-      const monthNumber = Number((r.date || '').slice(5, 7));
+      const monthNumber = Number(recordDate.slice(5, 7));
       return monthNumber <= currentMonth;
     }
-    return (r.date || '').slice(5, 7) === selectedMonth;
+    return recordDate.slice(5, 7) === selectedMonth;
   });
+  const periodLabel = periodMode === 'daily'
+    ? formatDisplayDate(selectedDate)
+    : periodMode === 'range'
+      ? rangeFrom && rangeTo
+        ? `${formatDisplayDate(rangeFrom)} – ${formatDisplayDate(rangeTo)}`
+        : rangeFrom
+          ? `From ${formatDisplayDate(rangeFrom)}`
+          : rangeTo
+            ? `Up to ${formatDisplayDate(rangeTo)}`
+            : 'All dates'
+      : year === 'all'
+        ? 'All years'
+        : selectedMonth === 'all'
+          ? `All months (${year})`
+          : selectedMonth === 'to-date'
+            ? `January to ${new Date(`${year}-${String(currentMonth).padStart(2, '0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`
+            : `${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`;
   const totals = totalsOf(dashboardRecords);
   const scoutByDivision = db.divisions.map(name => {
     const recordsForDivision = dashboardRecords.filter(r => r.division === name);
@@ -387,8 +440,14 @@ export default function App() {
     { name: 'Male Heads', value: totals.headMale, records: dashboardRecords.filter(r => Number(r.headMale || 0) > 0) },
     { name: 'Female Heads', value: totals.headFemale, records: dashboardRecords.filter(r => Number(r.headFemale || 0) > 0) }
   ];
-  const trendData = useMemo(() => monthlyData(dashboardRecords, 'scouts'), [dashboardRecords]);
-  const revenueData = useMemo(() => monthlyData(dashboardRecords, 'paid'), [dashboardRecords]);
+  const trendData = useMemo(
+    () => (trendView === 'daily' ? dailyData(dashboardRecords, 'scouts') : monthlyData(dashboardRecords, 'scouts')),
+    [dashboardRecords, trendView]
+  );
+  const revenueData = useMemo(
+    () => (trendView === 'daily' ? dailyData(dashboardRecords, 'paid') : monthlyData(dashboardRecords, 'paid')),
+    [dashboardRecords, trendView]
+  );
   const districtNames = [...new Set([
     ...(db.districts[selectedDivision] || []),
     ...dashboardRecords.filter(r => r.division === selectedDivision).map(r => r.district).filter(Boolean)
@@ -724,7 +783,128 @@ export default function App() {
       </aside>
       <main className="content">
         {page === 'dashboard' && <section className="page">
-          <div className="page-heading"><div><h1>Council Overview</h1><p>Registration performance, membership distribution, and collections.</p></div><div className="header-controls"><select className="control year-select" value={year} onChange={e => { setYear(e.target.value); if (e.target.value === 'all') setSelectedMonth('all'); else setSelectedMonth('to-date'); }}><option value="all">All years</option>{yearOptions.map(y => <option key={y}>{y}</option>)}</select><select className="control" value={dashboardDivision} onChange={e => setDashboardDivision(e.target.value)}><option value="all">All divisions</option>{db.divisions.map(d => <option key={d} value={d}>{d}</option>)}</select><select className="control" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} disabled={year === 'all'}><option value="all">All months</option><option value="to-date">From January to current month</option>{monthOptions.filter(m => m !== 'all').map(month => <option key={month} value={month}>{new Date(`${year}-${month}-01`).toLocaleDateString('en-PH', { month: 'long' })}</option>)}</select></div></div>
+          <div className="page-heading">
+            <div><h1>Council Overview</h1><p>Registration performance, membership distribution, and collections.</p></div>
+            <div className="header-controls">
+              <select
+                className="control"
+                aria-label="Dashboard period mode"
+                value={periodMode}
+                onChange={e => {
+                  const nextMode = e.target.value;
+                  setPeriodMode(nextMode);
+                  if (nextMode === 'daily' || nextMode === 'range') {
+                    setTrendView('daily');
+                  } else if (selectedMonth === 'all' || selectedMonth === 'to-date') {
+                    setTrendView('monthly');
+                  }
+                }}
+              >
+                <option value="monthly">By Month</option>
+                <option value="daily">By Date (Daily)</option>
+                <option value="range">Date Range</option>
+              </select>
+              {periodMode === 'monthly' && (
+                <>
+                  <select
+                    className="control year-select"
+                    value={year}
+                    onChange={e => {
+                      const nextYear = e.target.value;
+                      setYear(nextYear);
+                      if (nextYear === 'all') {
+                        setSelectedMonth('all');
+                        setTrendView('monthly');
+                      } else {
+                        setSelectedMonth('to-date');
+                        setTrendView('monthly');
+                      }
+                    }}
+                  >
+                    <option value="all">All years</option>
+                    {yearOptions.map(y => <option key={y}>{y}</option>)}
+                  </select>
+                  <select
+                    className="control"
+                    value={selectedMonth}
+                    onChange={e => {
+                      const nextMonth = e.target.value;
+                      setSelectedMonth(nextMonth);
+                      setTrendView(nextMonth !== 'all' && nextMonth !== 'to-date' ? 'daily' : 'monthly');
+                    }}
+                    disabled={year === 'all'}
+                  >
+                    <option value="all">All months</option>
+                    <option value="to-date">From January to current month</option>
+                    {monthOptions.filter(m => m !== 'all').map(month => <option key={month} value={month}>{new Date(`${year}-${month}-01`).toLocaleDateString('en-PH', { month: 'long' })}</option>)}
+                  </select>
+                </>
+              )}
+              {periodMode === 'daily' && (
+                <div className="date-nav-group">
+                  <button
+                    type="button"
+                    className="date-step-btn"
+                    title="Previous day"
+                    aria-label="Previous day"
+                    onClick={() => setSelectedDate(prev => shiftDate(prev, -1))}
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <input
+                    type="date"
+                    className="control date-control"
+                    aria-label="Filter by date"
+                    value={selectedDate}
+                    onChange={e => setSelectedDate(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="date-step-btn"
+                    title="Next day"
+                    aria-label="Next day"
+                    onClick={() => setSelectedDate(prev => shiftDate(prev, 1))}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                  {selectedDate !== today() && (
+                    <button
+                      type="button"
+                      className="btn outline date-today-btn"
+                      onClick={() => setSelectedDate(today())}
+                    >
+                      Today
+                    </button>
+                  )}
+                </div>
+              )}
+              {periodMode === 'range' && (
+                <div className="date-range-group">
+                  <input
+                    type="date"
+                    className="control date-control"
+                    aria-label="Start date"
+                    value={dateRangeStart}
+                    max={dateRangeEnd || undefined}
+                    onChange={e => setDateRangeStart(e.target.value)}
+                  />
+                  <span className="range-sep">to</span>
+                  <input
+                    type="date"
+                    className="control date-control"
+                    aria-label="End date"
+                    value={dateRangeEnd}
+                    min={dateRangeStart || undefined}
+                    onChange={e => setDateRangeEnd(e.target.value)}
+                  />
+                </div>
+              )}
+              <select className="control" value={dashboardDivision} onChange={e => setDashboardDivision(e.target.value)}>
+                <option value="all">All divisions</option>
+                {db.divisions.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          </div>
           {unassignedLeaderRecords.length > 0 && (
             <Panel
               title={`⚠️ Action Required: ${fmt(totalUnassignedLeaders)} Unit Leaders Unassigned to Sections`}
@@ -799,7 +979,7 @@ export default function App() {
             </Panel>
           )}
           <div className="metric-grid">
-            <Metric label="Total Registered Scouts" value={fmt(totals.scouts)} note="Across selected period" icon={Users}/>
+            <Metric label="Total Registered Scouts" value={fmt(totals.scouts)} note={periodLabel} icon={Users}/>
             <MetricWithGender label="Unit Leaders" total={fmt(totals.leaders)} male={fmt(totals.leaderMale)} female={fmt(totals.leaderFemale)} note="Registered leaders" icon={UserRound}/>
             <MetricWithGender label="Institutional Heads" total={fmt(totals.heads)} male={fmt(totals.headMale)} female={fmt(totals.headFemale)} note="Registered heads" icon={School}/>
             <Metric label="School Registrations" value={fmt(totals.entries)} note="Encoded submissions" icon={School}/>
@@ -906,7 +1086,52 @@ export default function App() {
           </div>
           <div className="two-col">
             <Panel title="Institutional Heads by Division" subtitle="Share of registered heads"><ChartPie data={db.divisions.map(name => { const recordsForDivision = dashboardRecords.filter(r => r.division === name); return { name: name.replace(' Division', ''), value: recordsForDivision.reduce((s, r) => s + Number(r.heads || 0), 0), records: recordsForDivision }; })} onSelect={openChartDetail}/></Panel>
-            <Panel title="Registration Trend" subtitle={selectedMonth === 'all' ? 'Scouts registered by month' : selectedMonth === 'to-date' ? `Scouts registered from January to ${new Date(`${year}-${String(currentMonth).padStart(2,'0')}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}` : `Scouts registered in ${new Date(`${year}-${selectedMonth}-01`).toLocaleDateString('en-PH', { month: 'long' })} ${year}`}><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tick={{fontSize:10}}/><YAxis allowDecimals={false}/><Tooltip/><Line type="monotone" dataKey="scouts" stroke="#174a78" strokeWidth={3} dot={{fill:'#e4ad37',r:4}} onClick={item => openChartDetail(item)} /></LineChart></ResponsiveContainer></div></Panel>
+            <Panel
+              title="Registration Trend"
+              subtitle={`${trendView === 'daily' ? 'Scouts registered by date' : 'Scouts registered by month'} · ${periodLabel}`}
+              action={
+                <div style={{ display: 'inline-flex', gap: '3px', background: '#edf3f8', padding: '2px', borderRadius: '14px' }}>
+                  <button
+                    type="button"
+                    className={`chip ${trendView === 'monthly' ? 'selected' : ''}`}
+                    style={{ padding: '3px 8px', fontSize: '10px', border: 0, margin: 0 }}
+                    onClick={() => setTrendView('monthly')}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    type="button"
+                    className={`chip ${trendView === 'daily' ? 'selected' : ''}`}
+                    style={{ padding: '3px 8px', fontSize: '10px', border: 0, margin: 0 }}
+                    onClick={() => setTrendView('daily')}
+                  >
+                    Daily
+                  </button>
+                </div>
+              }
+            >
+              {trendData.length === 0 ? <EmptyChart /> : (
+                <div className="chart-box">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={trendData}>
+                      <CartesianGrid strokeDasharray="3 3"/>
+                      <XAxis dataKey="period" tick={{fontSize:10}}/>
+                      <YAxis allowDecimals={false}/>
+                      <Tooltip formatter={v => fmt(v)}/>
+                      <Line
+                        type="monotone"
+                        dataKey="scouts"
+                        stroke="#174a78"
+                        strokeWidth={3}
+                        dot={{fill:'#e4ad37',r:4}}
+                        activeDot={{ r: 6, cursor: 'pointer', onClick: (_, payload) => openChartDetail(payload?.payload) }}
+                        onClick={item => openChartDetail(item)}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </Panel>
           </div>
           <Panel title="Division Drill-down" subtitle="Select a division to view district-level scout and leader distribution.">
             <div className="chip-row">{db.divisions.map(d => <button key={d} className={`chip ${selectedDivision === d ? 'selected' : ''}`} onClick={() => { setDashboardDivision(d); setSelectedDivision(d); }}>{d}</button>)}</div>
@@ -1083,20 +1308,39 @@ export default function App() {
   </div>;
 }
 
-function monthlyData(records, field) {
+function aggregateTrendData(records, field, getKey, formatPeriod) {
   const map = {};
   records.forEach(r => {
     if (!r.date) return;
-    const key = r.date.slice(0, 7);
+    const key = getKey(r.date);
+    if (!key) return;
     map[key] ||= { total: 0, records: [] };
     map[key].total += field === 'scouts' ? scoutsOf(r) : Number(r[field] || 0);
     map[key].records.push(r);
   });
-  return Object.entries(map).sort(([a],[b]) => a.localeCompare(b)).map(([key, bucket]) => ({
-    period: new Date(`${key}-02`).toLocaleDateString('en-PH',{month:'short',year:'2-digit'}),
-    records: bucket.records,
-    [field === 'scouts' ? 'scouts' : 'collections']: bucket.total
-  }));
+  return Object.entries(map)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, bucket]) => ({
+      period: formatPeriod(key),
+      records: bucket.records,
+      [field === 'scouts' ? 'scouts' : 'collections']: bucket.total
+    }));
+}
+function monthlyData(records, field) {
+  return aggregateTrendData(
+    records,
+    field,
+    date => date.slice(0, 7),
+    key => new Date(`${key}-02`).toLocaleDateString('en-PH', { month: 'short', year: '2-digit' })
+  );
+}
+function dailyData(records, field) {
+  return aggregateTrendData(
+    records,
+    field,
+    date => date.slice(0, 10),
+    key => new Date(`${key}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: '2-digit' })
+  );
 }
 function weeklyData(records, field) {
   const map = {};
