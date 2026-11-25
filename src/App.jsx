@@ -27,6 +27,19 @@ const LEADER_SECTIONS = [
   ['circleManager', 'Circle Manager (Rover Scouts)']
 ];
 const leaderSectionsOf = r => LEADER_SECTIONS.reduce((sum, [key]) => sum + Number(r[key] || 0), 0);
+const scoutSectionGenderIssues = record => SECTIONS
+  .filter(([key]) => Number(record[key] || 0) > 0)
+  .filter(([key]) => {
+    const male = record[`${key}Male`];
+    const female = record[`${key}Female`];
+    if (male === undefined || male === '' || female === undefined || female === '') {
+      const allMale = Number(record.male || 0) > 0 && Number(record.female || 0) === 0;
+      const allFemale = Number(record.female || 0) > 0 && Number(record.male || 0) === 0;
+      return !allMale && !allFemale;
+    }
+    return Number(male || 0) + Number(female || 0) !== Number(record[key] || 0);
+  })
+  .map(([, label]) => label.replace(' Scouts', ''));
 const COLORS = ['#174a78', '#e4ad37', '#26936d', '#8a6bb1', '#df7954', '#4b9eae', '#8796a8'];
 const SECTION_COLORS = {
   'Kid Scouts': '#cfe7f6',
@@ -275,6 +288,7 @@ export default function App() {
   const [divisionFilter, setDivisionFilter] = useState('');
   const [filterUnassignedOnly, setFilterUnassignedOnly] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [editReturnTab, setEditReturnTab] = useState(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [chartDetail, setChartDetail] = useState(null);
   const [leaderChartType, setLeaderChartType] = useState('bar');
@@ -283,6 +297,7 @@ export default function App() {
     division: DEFAULT_DIVISIONS[0], district: '', school: '', date: today(),
     receipt: '', aur: '', kid: 0, kab: 0, boy: 0, senior: 0, rover: 0,
     male: 0, female: 0,
+    ...SECTIONS.reduce((values, [key]) => ({ ...values, [`${key}Male`]: '', [`${key}Female`]: '' }), {}),
     langkayLeader: 0, kawanLeader: 0, troopLeader: 0, outfitAdvisor: 0, circleManager: 0,
     leaders: 0, heads: 0, leaderMale: 0, leaderFemale: 0, headMale: 0, headFemale: 0,
     scoutFee: 0, leaderFee: 0, institutionFee: 0, paid: 0, paymentNotes: ''
@@ -589,22 +604,25 @@ export default function App() {
         auto.aisM += Number(r.leaderMale || 0) + Number(r.headMale || 0);
         auto.aisF += Number(r.leaderFemale || 0) + Number(r.headFemale || 0);
         SECTIONS.forEach(([secKey]) => {
-          sectionTotals[secKey] += Number(r[secKey] || 0);
-        });
-        if (scoutTotal > 0) {
-          if (rMale > 0 && rFemale === 0) {
-            SECTIONS.forEach(([secKey]) => {
-              auto[`${secKey}M`] += Number(r[secKey] || 0);
-            });
+          const sectionCount = Number(r[secKey] || 0);
+          const sectionMale = r[`${secKey}Male`];
+          const sectionFemale = r[`${secKey}Female`];
+          sectionTotals[secKey] += sectionCount;
+          if (sectionMale !== undefined && sectionMale !== '' && sectionFemale !== undefined && sectionFemale !== '') {
+            auto[`${secKey}M`] += Number(sectionMale || 0);
+            auto[`${secKey}F`] += Number(sectionFemale || 0);
+          } else if (rMale > 0 && rFemale === 0) {
+            auto[`${secKey}M`] += sectionCount;
           } else if (rFemale > 0 && rMale === 0) {
-            SECTIONS.forEach(([secKey]) => {
-              auto[`${secKey}F`] += Number(r[secKey] || 0);
-            });
-          } else if (rMale > 0 && rFemale > 0) {
+            auto[`${secKey}F`] += sectionCount;
+          }
+        });
+        if (scoutTotal > 0 && scoutSectionGenderIssues(r).length > 0) {
+          if (rMale > 0 && rFemale > 0) {
             mixedScouts += scoutTotal;
             mixedMale += rMale;
             mixedFemale += rFemale;
-          } else {
+          } else if (rMale === 0 && rFemale === 0) {
             unrecordedGenderScouts += scoutTotal;
           }
         }
@@ -613,7 +631,7 @@ export default function App() {
       const needsSplit = {};
       SECTIONS.forEach(([secKey]) => {
         const autoSplitSum = auto[`${secKey}M`] + auto[`${secKey}F`];
-        const hasMissingSplit = sectionTotals[secKey] > autoSplitSum;
+        const hasMissingSplit = sectionTotals[secKey] !== autoSplitSum;
         const hasOverride = rowOverrides[`${secKey}M`] !== undefined || rowOverrides[`${secKey}F`] !== undefined;
         needsSplit[secKey] = hasMissingSplit && !hasOverride;
       });
@@ -647,7 +665,7 @@ export default function App() {
         auto,
         sectionTotals,
         needsSplit,
-        hasMixedOrMissingGender: mixedScouts > 0 || unrecordedGenderScouts > 0,
+        hasMixedOrMissingGender: Object.values(needsSplit).some(Boolean),
         mixedMale,
         mixedFemale,
         unrecordedGenderScouts,
@@ -713,14 +731,19 @@ export default function App() {
       const rFemale = Number(r.female || 0);
       MMRR_SECTIONS[0].rows.forEach(row => {
         const count = Number(r[row.field] || 0);
+        const rowMale = r[`${row.field}Male`];
+        const rowFemale = r[`${row.field}Female`];
         fieldTotals[row.field] += count;
         autoCounts[row.key].total += count;
-        if (count > 0) {
+        if (rowMale !== undefined && rowMale !== '' && rowFemale !== undefined && rowFemale !== '') {
+          autoCounts[row.key].male += Number(rowMale || 0);
+          autoCounts[row.key].female += Number(rowFemale || 0);
+        } else if (count > 0) {
           if (rMale > 0 && rFemale === 0) autoCounts[row.key].male += count;
           else if (rFemale > 0 && rMale === 0) autoCounts[row.key].female += count;
         }
       });
-      if (rScouts > 0) {
+      if (rScouts > 0 && scoutSectionGenderIssues(r).length > 0) {
         if (rMale > 0 && rFemale > 0) {
           mixedScoutMale += rMale;
           mixedScoutFemale += rFemale;
@@ -991,14 +1014,22 @@ export default function App() {
 
   function resetForm() {
     setEditingId(null);
+    setEditReturnTab(null);
     setForm({
       division: db.divisions[0] || '', district: '', school: '', date: today(), receipt: '', aur: '',
       kid: 0, kab: 0, boy: 0, senior: 0, rover: 0, male: 0, female: 0,
+      ...SECTIONS.reduce((values, [key]) => ({ ...values, [`${key}Male`]: '', [`${key}Female`]: '' }), {}),
       langkayLeader: 0, kawanLeader: 0, troopLeader: 0, outfitAdvisor: 0, circleManager: 0,
       leaders: 0, leaderMale: 0, leaderFemale: 0,
       heads: 0, headMale: 0, headFemale: 0,
       scoutFee: 0, leaderFee: 0, institutionFee: 0, paid: 0, paymentNotes: ''
     });
+  }
+  function cancelRecordEdit() {
+    const returnTab = editReturnTab;
+    resetForm();
+    setPage(returnTab ? 'reports' : 'registrations');
+    if (returnTab) setReportTab(returnTab);
   }
   function saveRecord(e) {
     if (!isAdmin) {
@@ -1008,10 +1039,20 @@ export default function App() {
     e.preventDefault();
     const finalLeaders = formLeaderSections > 0 ? formLeaderSections : Number(form.leaders || 0);
     const record = { ...form, leaders: finalLeaders, id: editingId || crypto.randomUUID(), expected };
+    const returnTab = editReturnTab;
     const leaderGenderMismatch = Number(finalLeaders) !== Number(form.leaderMale) + Number(form.leaderFemale);
     const headGenderMismatch = Number(form.heads) !== Number(form.headMale) + Number(form.headFemale);
-    if ((Number(form.male) + Number(form.female) !== formScouts || leaderGenderMismatch || headGenderMismatch) &&
-      !window.confirm('One or more gender counts do not equal the total registered count. Save anyway?')) return;
+    const sectionGenderMismatch = SECTIONS.some(([key]) => {
+      const male = form[`${key}Male`];
+      const female = form[`${key}Female`];
+      if ((male === undefined || male === '') && (female === undefined || female === '')) return false;
+      return male === undefined || male === '' || female === undefined || female === ''
+        || Number(male || 0) + Number(female || 0) !== Number(form[key] || 0);
+    });
+    const missingSectionGenderBreakdown = scoutSectionGenderIssues(form).length > 0;
+    if ((Number(form.male) + Number(form.female) !== formScouts || leaderGenderMismatch || headGenderMismatch
+      || sectionGenderMismatch || missingSectionGenderBreakdown) &&
+      !window.confirm('One or more gender breakdowns are missing or do not match the section totals. Save anyway?')) return;
     setDb(prev => {
       const exists = prev.records.some(r => r.id === record.id);
       const nextRecords = exists ? prev.records.map(r => r.id === record.id ? record : r) : [...prev.records, record];
@@ -1022,15 +1063,22 @@ export default function App() {
       divisionSchools[normalizedDistrict] = unique([...(divisionSchools[normalizedDistrict] || []), normalizedSchool]);
       return { ...prev, records: nextRecords, districts, schools: { ...prev.schools, [record.division]: divisionSchools } };
     });
-    resetForm(); setPage('registrations');
+    resetForm();
+    setPage(returnTab ? 'reports' : 'registrations');
+    if (returnTab) setReportTab(returnTab);
   }
-  function editRecord(r) {
+  function editRecord(r, returnTab = null) {
     if (!isAdmin) {
       window.alert('Only the admin account can edit records.');
       return;
     }
     setForm({
       ...r,
+      ...SECTIONS.reduce((values, [key]) => ({
+        ...values,
+        [`${key}Male`]: r[`${key}Male`] ?? '',
+        [`${key}Female`]: r[`${key}Female`] ?? ''
+      }), {}),
       langkayLeader: r.langkayLeader ?? 0,
       kawanLeader: r.kawanLeader ?? 0,
       troopLeader: r.troopLeader ?? 0,
@@ -1044,7 +1092,7 @@ export default function App() {
       female: r.female ?? 0,
       leaders: r.leaders ?? 0,
       heads: r.heads ?? 0
-    }); setEditingId(r.id); setPage('form');
+    }); setEditingId(r.id); setEditReturnTab(returnTab); setPage('form');
   }
   function deleteRecord(id) {
     if (!isAdmin) {
@@ -1651,6 +1699,25 @@ export default function App() {
               <Field label="Male Scouts (all sections)"><input type="number" min="0" value={form.male} onChange={e => setField('male',e.target.value)}/></Field>
               <Field label="Female Scouts (all sections)"><input type="number" min="0" value={form.female} onChange={e => setField('female',e.target.value)}/></Field>
               <Field label="Gender Count Check"><input readOnly value={Number(form.male)+Number(form.female) === formScouts ? 'Matched' : `Difference: ${Math.abs(formScouts-Number(form.male)-Number(form.female))}`}/></Field>
+              <div className="form-hint scout-section-gender-hint">
+                Enter Male and Female counts for each section when the registration includes mixed-gender scouts. Leave these fields blank when all scouts are one gender; the overall totals above will be used.
+              </div>
+              {SECTIONS.map(([key, label]) => (
+                <React.Fragment key={`${key}-gender`}>
+                  <Field label={`${label} — Male`}>
+                    <input type="number" min="0" value={form[`${key}Male`]} onChange={e => setField(`${key}Male`, e.target.value)} />
+                  </Field>
+                  <Field label={`${label} — Female`}>
+                    <input type="number" min="0" value={form[`${key}Female`]} onChange={e => setField(`${key}Female`, e.target.value)} />
+                  </Field>
+                </React.Fragment>
+              ))}
+              {scoutSectionGenderIssues(form).length > 0 && (
+                <div className="scout-section-gender-status">
+                  <strong>Section gender counts still need attention:</strong>{' '}
+                  {scoutSectionGenderIssues(form).join(', ')}. Enter both Male and Female counts for each listed section so the transmittal no longer shows question marks.
+                </div>
+              )}
             </FormSection>
             <FormSection title="3. Unit Leaders & Institutional Heads">
               {Number(form.leaders || 0) > formLeaderSections && (
@@ -1719,7 +1786,7 @@ export default function App() {
               <Field label="Payment Notes"><input value={form.paymentNotes} onChange={e => setField('paymentNotes',e.target.value)} placeholder="Optional notes"/></Field>
             </FormSection>
             <p className="form-hint">Expected amount = (total scouts × fee per scout) + (Unit Leaders × unit leader fee) + (Institutional Heads × institutional head fee). Actual amount paid is stored separately for partial payments or adjustments.</p>
-            <div className="form-actions"><button className="btn gold" type="submit">Save Registration</button><button className="btn outline" type="button" onClick={() => {resetForm();setPage('registrations')}}>Cancel</button></div>
+            <div className="form-actions"><button className="btn gold" type="submit">Save Registration</button><button className="btn outline" type="button" onClick={cancelRecordEdit}>Cancel</button></div>
           </form>
         </section>}
 
@@ -1849,6 +1916,10 @@ export default function App() {
                 if (scoutMale + scoutFemale !== scoutTotal) {
                   issues.push(scoutMale === 0 && scoutFemale === 0 ? 'Scout gender not recorded' : 'Scout gender counts need review');
                 }
+                const missingSectionBreakdowns = scoutSectionGenderIssues(r);
+                if (missingSectionBreakdowns.length > 0) {
+                  issues.push(`Section gender split needed: ${missingSectionBreakdowns.join(', ')}`);
+                }
                 if (leaderAssigned < leaderTotal) {
                   issues.push(`${leaderTotal - leaderAssigned} unit leader(s) need section assignment`);
                 }
@@ -1909,7 +1980,7 @@ export default function App() {
               </div>
               {transmittalRows.some(row => row.hasMixedOrMissingGender) && (
                 <div className="notice" style={{ marginTop: '12px' }}>
-                  <strong>Per-section gender input note:</strong> Registration records store Male/Female scout totals across all sections combined. For rows with mixed or unrecorded scout genders below, enter the M/F breakdown per section directly in the table before printing:
+                  <strong>Per-section gender input note:</strong> Some registration entries still need Male/Female counts by scout section. Click a question mark in the transmittal table, then choose the entry to edit:
                   <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
                     {transmittalRows.filter(row => row.hasMixedOrMissingGender).map(row => (
                       <li key={row.key}>
@@ -1923,7 +1994,7 @@ export default function App() {
                 </div>
               )}
               {transmittalIssueRecords.length > 0 && (
-                <div className="mmrr-consolidation-list">
+                <div className="mmrr-consolidation-list" id="transmittal-consolidation-list">
                   <div className="mmrr-consolidation-heading">
                     <strong>Registration entries needing consolidation</strong>
                     <span>{transmittalIssueRecords.length} {transmittalIssueRecords.length === 1 ? 'entry' : 'entries'}</span>
@@ -1933,7 +2004,7 @@ export default function App() {
                       type="button"
                       className="mmrr-consolidation-entry"
                       key={r.id}
-                      onClick={() => editRecord(r)}
+                      onClick={() => editRecord(r, 'transmittal')}
                       title="Open and edit this registration entry"
                     >
                       <span className="mmrr-consolidation-entry-main">
@@ -2014,26 +2085,44 @@ export default function App() {
                         {TRANSMITTAL_SECTIONS.map(([secKey]) => (
                           <React.Fragment key={`${row.key}-${secKey}`}>
                             <td className={`num-cell ${row.needsSplit[secKey] ? 'needs-input' : ''}`}>
-                              <input
-                                type="number"
-                                min="0"
-                                className="transmittal-cell-input"
-                                aria-label={`${row.label} ${secKey} male`}
-                                value={row.displayVal(`${secKey}M`, secKey)}
-                                placeholder={row.needsSplit[secKey] ? '?' : '0'}
-                                onChange={e => updateTransmittalCell(row.key, `${secKey}M`, e.target.value)}
-                              />
+                              {row.needsSplit[secKey] ? (
+                                <button
+                                  type="button"
+                                  className="transmittal-missing-link"
+                                  aria-label={`${row.label} ${secKey} male count needs a registration gender split`}
+                                  title="Click to find and edit the registration entries missing this section's gender counts"
+                                  onClick={() => document.getElementById('transmittal-consolidation-list')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                                >?</button>
+                              ) : (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="transmittal-cell-input"
+                                  aria-label={`${row.label} ${secKey} male`}
+                                  value={row.displayVal(`${secKey}M`, secKey)}
+                                  onChange={e => updateTransmittalCell(row.key, `${secKey}M`, e.target.value)}
+                                />
+                              )}
                             </td>
                             <td className={`num-cell ${row.needsSplit[secKey] ? 'needs-input' : ''}`}>
-                              <input
-                                type="number"
-                                min="0"
-                                className="transmittal-cell-input"
-                                aria-label={`${row.label} ${secKey} female`}
-                                value={row.displayVal(`${secKey}F`, secKey)}
-                                placeholder={row.needsSplit[secKey] ? '?' : '0'}
-                                onChange={e => updateTransmittalCell(row.key, `${secKey}F`, e.target.value)}
-                              />
+                              {row.needsSplit[secKey] ? (
+                                <button
+                                  type="button"
+                                  className="transmittal-missing-link"
+                                  aria-label={`${row.label} ${secKey} female count needs a registration gender split`}
+                                  title="Click to find and edit the registration entries missing this section's gender counts"
+                                  onClick={() => document.getElementById('transmittal-consolidation-list')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                                >?</button>
+                              ) : (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="transmittal-cell-input"
+                                  aria-label={`${row.label} ${secKey} female`}
+                                  value={row.displayVal(`${secKey}F`, secKey)}
+                                  onChange={e => updateTransmittalCell(row.key, `${secKey}F`, e.target.value)}
+                                />
+                              )}
                             </td>
                           </React.Fragment>
                         ))}
@@ -2126,6 +2215,10 @@ export default function App() {
 
                 if (scoutMale + scoutFemale !== scoutTotal) {
                   issues.push(scoutMale === 0 && scoutFemale === 0 ? 'Scout gender not recorded' : 'Scout gender counts need review');
+                }
+                const missingSectionBreakdowns = scoutSectionGenderIssues(r);
+                if (missingSectionBreakdowns.length > 0) {
+                  issues.push(`Section gender split needed: ${missingSectionBreakdowns.join(', ')}`);
                 }
                 if (leaderAssigned < leaderTotal) {
                   issues.push(`${leaderTotal - leaderAssigned} unit leader(s) need section assignment`);
@@ -2274,7 +2367,7 @@ export default function App() {
                         type="button"
                         className="mmrr-consolidation-entry"
                         key={r.id}
-                        onClick={() => editRecord(r)}
+                        onClick={() => editRecord(r, 'mmrr')}
                         title="Open and edit this registration entry"
                       >
                         <span className="mmrr-consolidation-entry-main">

@@ -17,6 +17,11 @@
 .mmrr-consolidation-entry-main span{color:#64748b;font-size:11px}
 .mmrr-consolidation-issues{color:#92400e;font-size:11px;font-weight:600}
 .mmrr-consolidation-action{display:inline-flex;align-items:center;gap:5px;color:#174a78;font-size:11px;font-weight:800;white-space:nowrap}
+.scout-section-gender-hint,.scout-section-gender-status{grid-column:1/-1}
+.scout-section-gender-status{border:1px solid #fde68a;border-radius:7px;background:#fffbeb;padding:10px 12px;color:#92400e;font-size:12px}
+.transmittal-missing-link{border:0;background:transparent;color:#92400e;font:inherit;font-weight:800;text-decoration:underline;cursor:pointer;padding:0 6px}
+.transmittal-missing-link:hover,.transmittal-missing-link:focus-visible{color:#174a78}
+@media(max-width:760px){.mmrr-consolidation-entry{grid-template-columns:1fr;gap:5px}.mmrr-consolidation-action{justify-content:flex-start}}
 @media print{
   .transmittal-table,.mmrr-perf-table,.mmrr-meta-table,.mmrr-main-table,.mmrr-inst-table,.mmrr-units-table{
     border-collapse:collapse!important;
