@@ -40,6 +40,19 @@ const scoutSectionGenderIssues = record => SECTIONS
     return Number(male || 0) + Number(female || 0) !== Number(record[key] || 0);
   })
   .map(([, label]) => label.replace(' Scouts', ''));
+const leaderSectionGenderIssues = record => LEADER_SECTIONS
+  .filter(([key]) => Number(record[key] || 0) > 0)
+  .filter(([key]) => {
+    const male = record[`${key}Male`];
+    const female = record[`${key}Female`];
+    if (male === undefined || male === '' || female === undefined || female === '') {
+      const allMale = Number(record.leaderMale || 0) > 0 && Number(record.leaderFemale || 0) === 0;
+      const allFemale = Number(record.leaderFemale || 0) > 0 && Number(record.leaderMale || 0) === 0;
+      return !allMale && !allFemale;
+    }
+    return Number(male || 0) + Number(female || 0) !== Number(record[key] || 0);
+  })
+  .map(([, label]) => label);
 const COLORS = ['#174a78', '#e4ad37', '#26936d', '#8a6bb1', '#df7954', '#4b9eae', '#8796a8'];
 const SECTION_COLORS = {
   'Kid Scouts': '#cfe7f6',
@@ -152,6 +165,7 @@ const money = n => new Intl.NumberFormat('en-PH', { style: 'currency', currency:
 const fmt = n => new Intl.NumberFormat('en-PH').format(Number(n || 0));
 const fmtDec = n => new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n || 0));
 const svgToDataUrl = svg => (svg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` : '');
+const normalizeInstitutionName = value => String(value || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
 const readStoredValue = key => {
   try {
     return localStorage.getItem(key) || '';
@@ -298,6 +312,7 @@ export default function App() {
     receipt: '', aur: '', kid: 0, kab: 0, boy: 0, senior: 0, rover: 0,
     male: 0, female: 0,
     ...SECTIONS.reduce((values, [key]) => ({ ...values, [`${key}Male`]: '', [`${key}Female`]: '' }), {}),
+    ...LEADER_SECTIONS.reduce((values, [key]) => ({ ...values, [`${key}Male`]: '', [`${key}Female`]: '' }), {}),
     langkayLeader: 0, kawanLeader: 0, troopLeader: 0, outfitAdvisor: 0, circleManager: 0,
     leaders: 0, heads: 0, leaderMale: 0, leaderFemale: 0, headMale: 0, headFemale: 0,
     scoutFee: 0, leaderFee: 0, institutionFee: 0, paid: 0, paymentNotes: ''
@@ -761,14 +776,20 @@ export default function App() {
       const rLeaderFemale = Number(r.leaderFemale || 0);
       MMRR_SECTIONS[1].rows.forEach(row => {
         const count = Number(r[row.field] || 0);
+        const rowMale = r[`${row.field}Male`];
+        const rowFemale = r[`${row.field}Female`];
         fieldTotals[row.field] += count;
         autoCounts[row.key].total += count;
-        if (count > 0) {
-          if (rLeaderMale > 0 && rLeaderFemale === 0) autoCounts[row.key].male += count;
-          else if (rLeaderFemale > 0 && rLeaderMale === 0) autoCounts[row.key].female += count;
+        if (rowMale !== undefined && rowMale !== '' && rowFemale !== undefined && rowFemale !== '') {
+          autoCounts[row.key].male += Number(rowMale || 0);
+          autoCounts[row.key].female += Number(rowFemale || 0);
+        } else if (count > 0 && rLeaderMale > 0 && rLeaderFemale === 0) {
+          autoCounts[row.key].male += count;
+        } else if (count > 0 && rLeaderFemale > 0 && rLeaderMale === 0) {
+          autoCounts[row.key].female += count;
         }
       });
-      if (rLeaderAssigned > 0) {
+      if (rLeaderAssigned > 0 && leaderSectionGenderIssues(r).length > 0) {
         if (rLeaderMale > 0 && rLeaderFemale > 0) {
           mixedLeaderMale += rLeaderMale;
           mixedLeaderFemale += rLeaderFemale;
@@ -803,7 +824,7 @@ export default function App() {
         const auto = autoCounts[row.key];
         const ov = periodOverrides[row.key] || {};
         const hasOverride = ov.male !== undefined || ov.female !== undefined;
-        const needsSplit = !hasOverride && auto.total > auto.male + auto.female;
+        const needsSplit = !hasOverride && auto.total !== auto.male + auto.female;
         const male = ov.male !== undefined ? Number(ov.male || 0) : auto.male;
         const female = ov.female !== undefined ? Number(ov.female || 0) : auto.female;
         const total = hasOverride ? male + female : Math.max(auto.total, male + female);
@@ -841,9 +862,16 @@ export default function App() {
       { male: 0, female: 0, total: 0, totalFees: 0 }
     );
 
-    const autoInstitutions = unique(
-      periodRecords.map(r => `${r.division || ''}|${r.district || ''}|${r.school || ''}`)
-    ).length;
+    const autoInstitutions = new Set(
+      periodRecords
+        .map(r => [
+          normalizeInstitutionName(r.division),
+          normalizeInstitutionName(r.district),
+          normalizeInstitutionName(r.school)
+        ])
+        .filter(([, , school]) => school)
+        .map(institution => JSON.stringify(institution))
+    ).size;
     const institutions = periodOverrides._institutions !== undefined
       ? Number(periodOverrides._institutions || 0)
       : autoInstitutions;
@@ -1019,6 +1047,7 @@ export default function App() {
       division: db.divisions[0] || '', district: '', school: '', date: today(), receipt: '', aur: '',
       kid: 0, kab: 0, boy: 0, senior: 0, rover: 0, male: 0, female: 0,
       ...SECTIONS.reduce((values, [key]) => ({ ...values, [`${key}Male`]: '', [`${key}Female`]: '' }), {}),
+      ...LEADER_SECTIONS.reduce((values, [key]) => ({ ...values, [`${key}Male`]: '', [`${key}Female`]: '' }), {}),
       langkayLeader: 0, kawanLeader: 0, troopLeader: 0, outfitAdvisor: 0, circleManager: 0,
       leaders: 0, leaderMale: 0, leaderFemale: 0,
       heads: 0, headMale: 0, headFemale: 0,
@@ -1049,9 +1078,17 @@ export default function App() {
       return male === undefined || male === '' || female === undefined || female === ''
         || Number(male || 0) + Number(female || 0) !== Number(form[key] || 0);
     });
-    const missingSectionGenderBreakdown = scoutSectionGenderIssues(form).length > 0;
+    const leaderRoleGenderMismatch = LEADER_SECTIONS.some(([key]) => {
+      const male = form[`${key}Male`];
+      const female = form[`${key}Female`];
+      if ((male === undefined || male === '') && (female === undefined || female === '')) return false;
+      return male === undefined || male === '' || female === undefined || female === ''
+        || Number(male || 0) + Number(female || 0) !== Number(form[key] || 0);
+    });
+    const missingGenderBreakdown = scoutSectionGenderIssues(form).length > 0
+      || leaderSectionGenderIssues(form).length > 0;
     if ((Number(form.male) + Number(form.female) !== formScouts || leaderGenderMismatch || headGenderMismatch
-      || sectionGenderMismatch || missingSectionGenderBreakdown) &&
+      || sectionGenderMismatch || leaderRoleGenderMismatch || missingGenderBreakdown) &&
       !window.confirm('One or more gender breakdowns are missing or do not match the section totals. Save anyway?')) return;
     setDb(prev => {
       const exists = prev.records.some(r => r.id === record.id);
@@ -1075,6 +1112,11 @@ export default function App() {
     setForm({
       ...r,
       ...SECTIONS.reduce((values, [key]) => ({
+        ...values,
+        [`${key}Male`]: r[`${key}Male`] ?? '',
+        [`${key}Female`]: r[`${key}Female`] ?? ''
+      }), {}),
+      ...LEADER_SECTIONS.reduce((values, [key]) => ({
         ...values,
         [`${key}Male`]: r[`${key}Male`] ?? '',
         [`${key}Female`]: r[`${key}Female`] ?? ''
@@ -1760,6 +1802,25 @@ export default function App() {
                   />
                 </Field>
               ))}
+              <div className="form-hint scout-section-gender-hint">
+                Enter Male and Female counts for each leader role when the registration includes both genders. Leave these blank for a single-gender registration; the overall leader totals above will be used.
+              </div>
+              {LEADER_SECTIONS.map(([key, label]) => (
+                <React.Fragment key={`${key}-gender`}>
+                  <Field label={`${label} — Male`}>
+                    <input type="number" min="0" value={form[`${key}Male`]} onChange={e => setField(`${key}Male`, e.target.value)} />
+                  </Field>
+                  <Field label={`${label} — Female`}>
+                    <input type="number" min="0" value={form[`${key}Female`]} onChange={e => setField(`${key}Female`, e.target.value)} />
+                  </Field>
+                </React.Fragment>
+              ))}
+              {leaderSectionGenderIssues(form).length > 0 && (
+                <div className="scout-section-gender-status">
+                  <strong>Leader role gender counts still need attention:</strong>{' '}
+                  {leaderSectionGenderIssues(form).join(', ')}. Enter both Male and Female counts for each listed role so the MMRR no longer shows question marks.
+                </div>
+              )}
               <Field label="Total Unit Leaders">
                 <input
                   type="number"
@@ -1919,6 +1980,10 @@ export default function App() {
                 const missingSectionBreakdowns = scoutSectionGenderIssues(r);
                 if (missingSectionBreakdowns.length > 0) {
                   issues.push(`Section gender split needed: ${missingSectionBreakdowns.join(', ')}`);
+                }
+                const missingLeaderBreakdowns = leaderSectionGenderIssues(r);
+                if (missingLeaderBreakdowns.length > 0) {
+                  issues.push(`Leader gender split needed: ${missingLeaderBreakdowns.join(', ')}`);
                 }
                 if (leaderAssigned < leaderTotal) {
                   issues.push(`${leaderTotal - leaderAssigned} unit leader(s) need section assignment`);
@@ -2220,6 +2285,10 @@ export default function App() {
                 if (missingSectionBreakdowns.length > 0) {
                   issues.push(`Section gender split needed: ${missingSectionBreakdowns.join(', ')}`);
                 }
+                const missingLeaderBreakdowns = leaderSectionGenderIssues(r);
+                if (missingLeaderBreakdowns.length > 0) {
+                  issues.push(`Leader gender split needed: ${missingLeaderBreakdowns.join(', ')}`);
+                }
                 if (leaderAssigned < leaderTotal) {
                   issues.push(`${leaderTotal - leaderAssigned} unit leader(s) need section assignment`);
                 }
@@ -2357,7 +2426,7 @@ export default function App() {
                   </div>
                 )}
                 {mmrrIssueRecords.length > 0 && (
-                  <div className="mmrr-consolidation-list">
+                  <div className="mmrr-consolidation-list" id="mmrr-consolidation-list">
                     <div className="mmrr-consolidation-heading">
                       <strong>Registration entries needing consolidation</strong>
                       <span>{mmrrIssueRecords.length} {mmrrIssueRecords.length === 1 ? 'entry' : 'entries'}</span>
@@ -2512,26 +2581,44 @@ export default function App() {
                               <td className="mmrr-part-cell">{row.label}</td>
                               <td className="mmrr-fee-cell">{fmtDec(row.fee)}</td>
                               <td className={`mmrr-num-cell ${row.needsSplit ? 'needs-input' : ''}`}>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  className="mmrr-cell-input"
-                                  aria-label={`${row.label} Male`}
-                                  value={row.displayMale}
-                                  placeholder={row.needsSplit ? '?' : '0'}
-                                  onChange={e => updateMmrrRowCell(row.key, 'male', e.target.value)}
-                                />
+                                {row.needsSplit ? (
+                                  <button
+                                    type="button"
+                                    className="mmrr-missing-link"
+                                    aria-label={`${row.label} male count needs a registration gender split`}
+                                    title="Click to find and edit the registration entries missing this role's gender counts"
+                                    onClick={() => document.getElementById('mmrr-consolidation-list')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                                  >?</button>
+                                ) : (
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    className="mmrr-cell-input"
+                                    aria-label={`${row.label} Male`}
+                                    value={row.displayMale}
+                                    onChange={e => updateMmrrRowCell(row.key, 'male', e.target.value)}
+                                  />
+                                )}
                               </td>
                               <td className={`mmrr-num-cell ${row.needsSplit ? 'needs-input' : ''}`}>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  className="mmrr-cell-input"
-                                  aria-label={`${row.label} Female`}
-                                  value={row.displayFemale}
-                                  placeholder={row.needsSplit ? '?' : '0'}
-                                  onChange={e => updateMmrrRowCell(row.key, 'female', e.target.value)}
-                                />
+                                {row.needsSplit ? (
+                                  <button
+                                    type="button"
+                                    className="mmrr-missing-link"
+                                    aria-label={`${row.label} female count needs a registration gender split`}
+                                    title="Click to find and edit the registration entries missing this role's gender counts"
+                                    onClick={() => document.getElementById('mmrr-consolidation-list')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                                  >?</button>
+                                ) : (
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    className="mmrr-cell-input"
+                                    aria-label={`${row.label} Female`}
+                                    value={row.displayFemale}
+                                    onChange={e => updateMmrrRowCell(row.key, 'female', e.target.value)}
+                                  />
+                                )}
                               </td>
                               <td className="mmrr-count-cell">{row.total > 0 ? fmt(row.total) : '-'}</td>
                               <td className="mmrr-val-cell">{row.totalFees > 0 ? fmtDec(row.totalFees) : '-'}</td>
