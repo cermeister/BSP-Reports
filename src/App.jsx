@@ -50,6 +50,53 @@ const TRANSMITTAL_BASE_ROWS = [
   { key: 'community-institution', label: 'COMMUNITY INSTITUTION', match: ['community institution', 'community institution division', 'community'] }
 ];
 const TRANSMITTAL_SIGNATURE_KEY = 'bspAgusanTransmittalSignature';
+const MMRR_PREPARED_SIG_KEY = 'bspAgusanMmrrPreparedSig';
+const MMRR_CERTIFIED_SIG_KEY = 'bspAgusanMmrrCertifiedSig';
+const MMRR_SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MMRR_SECTIONS = [
+  {
+    id: 'scouts',
+    title: 'SCOUTS',
+    hasBlankRow: true,
+    rows: [
+      { key: 'kid', label: 'KID Scout', fee: 50, field: 'kid' },
+      { key: 'kab', label: 'KAB Scout', fee: 50, field: 'kab' },
+      { key: 'boy', label: 'Boy Scout', fee: 50, field: 'boy' },
+      { key: 'senior', label: 'Senior Scout', fee: 50, field: 'senior' },
+      { key: 'rover', label: 'Rover Scout', fee: 50, field: 'rover' }
+    ]
+  },
+  {
+    id: 'leaders',
+    title: 'UNIT LEADERS',
+    rows: [
+      { key: 'langkayLeader', label: 'Langkay Leader/Assistant', fee: 60, field: 'langkayLeader' },
+      { key: 'kawanLeader', label: 'Kawan Leader/Assistant', fee: 60, field: 'kawanLeader' },
+      { key: 'troopLeader', label: 'Troop Leader/Assistant', fee: 60, field: 'troopLeader' },
+      { key: 'outfitAdvisor', label: 'Outfit Advisor/Assistant', fee: 60, field: 'outfitAdvisor' },
+      { key: 'circleManager', label: 'Circle Manager/Assistant', fee: 60, field: 'circleManager' }
+    ]
+  },
+  {
+    id: 'lay',
+    title: 'LAY LEADERS',
+    rows: [
+      { key: 'isr', label: 'Institutional Scouting Representative', fee: 100, field: 'heads' },
+      { key: 'iscom', label: 'ISCOM/ISC', fee: 100 },
+      { key: 'distComm', label: 'Dist./Mun. Commissioner/Coor.', fee: 100 },
+      { key: 'distChair', label: 'Dist./Mun. Chairperson', fee: 100 },
+      { key: 'dmal', label: 'DMAL/CMAL', fee: 100 },
+      { key: 'councilStaff', label: 'Local Council Staff', fee: 100 }
+    ]
+  }
+];
+const MMRR_UNITS = [
+  { key: 'langkay', label: 'Langkay', scoutField: 'kid', leaderField: 'langkayLeader' },
+  { key: 'kawan', label: 'Kawan', scoutField: 'kab', leaderField: 'kawanLeader' },
+  { key: 'troop', label: 'Troop', scoutField: 'boy', leaderField: 'troopLeader' },
+  { key: 'outfit', label: 'Outfit', scoutField: 'senior', leaderField: 'outfitAdvisor' },
+  { key: 'circle', label: 'Circle', scoutField: 'rover', leaderField: 'circleManager' }
+];
 const STORAGE_KEY = 'bspAgusanReact';
 const AUTH_STORAGE_KEY = 'bspAgusanAuth_v2';
 const CURRENT_AUTH_SESSION_VERSION = 2;
@@ -88,6 +135,15 @@ const formatLongDate = dateStr => {
 };
 const money = n => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(n || 0));
 const fmt = n => new Intl.NumberFormat('en-PH').format(Number(n || 0));
+const fmtDec = n => new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n || 0));
+const svgToDataUrl = svg => (svg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` : '');
+const readStoredValue = key => {
+  try {
+    return localStorage.getItem(key) || '';
+  } catch {
+    return '';
+  }
+};
 const scoutsOf = r => SECTIONS.reduce((sum, [key]) => sum + Number(r[key] || 0), 0);
 const totalsOf = records => records.reduce((a, r) => {
   SECTIONS.forEach(([key]) => a[key] += Number(r[key] || 0));
@@ -202,13 +258,15 @@ export default function App() {
   const [transmittalYear, setTransmittalYear] = useState(() => String(new Date().getFullYear()));
   const [transmittalDate, setTransmittalDate] = useState(today);
   const [transmittalOverrides, setTransmittalOverrides] = useState({});
-  const [transmittalSignature, setTransmittalSignature] = useState(() => {
-    try {
-      return localStorage.getItem(TRANSMITTAL_SIGNATURE_KEY) || '';
-    } catch {
-      return '';
-    }
-  });
+  const [transmittalSignature, setTransmittalSignature] = useState(() => readStoredValue(TRANSMITTAL_SIGNATURE_KEY));
+  const [mmrrMonth, setMmrrMonth] = useState(() => String(new Date().getMonth() + 1).padStart(2, '0'));
+  const [mmrrYear, setMmrrYear] = useState(() => String(new Date().getFullYear()));
+  const [mmrrOverrides, setMmrrOverrides] = useState({});
+  const [mmrrPerf, setMmrrPerf] = useState({});
+  const [mmrrPreparedDate, setMmrrPreparedDate] = useState(today);
+  const [mmrrCertifiedDate, setMmrrCertifiedDate] = useState(today);
+  const [mmrrPreparedSig, setMmrrPreparedSig] = useState(() => readStoredValue(MMRR_PREPARED_SIG_KEY));
+  const [mmrrCertifiedSig, setMmrrCertifiedSig] = useState(() => readStoredValue(MMRR_CERTIFIED_SIG_KEY));
   const [query, setQuery] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
   const [filterUnassignedOnly, setFilterUnassignedOnly] = useState(false);
@@ -617,10 +675,243 @@ export default function App() {
     return sum;
   }, [transmittalRows]);
 
-  const transmittalSignatureUrl = useMemo(() => {
-    if (!transmittalSignature) return '';
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(transmittalSignature)}`;
-  }, [transmittalSignature]);
+  const transmittalSignatureUrl = useMemo(() => svgToDataUrl(transmittalSignature), [transmittalSignature]);
+  const mmrrPreparedSigUrl = useMemo(() => svgToDataUrl(mmrrPreparedSig), [mmrrPreparedSig]);
+  const mmrrCertifiedSigUrl = useMemo(() => svgToDataUrl(mmrrCertifiedSig), [mmrrCertifiedSig]);
+  const mmrrPeriodKey = `${mmrrYear}-${mmrrMonth}`;
+
+  const mmrrData = useMemo(() => {
+    const periodRecords = records.filter(r => (r.date || '').startsWith(mmrrPeriodKey));
+    const periodOverrides = mmrrOverrides[mmrrPeriodKey] || {};
+    const autoCounts = {};
+    const fieldTotals = {};
+    let mixedScoutNote = null;
+    let mixedLeaderNote = null;
+
+    MMRR_SECTIONS.forEach(sec => {
+      sec.rows.forEach(row => {
+        autoCounts[row.key] = { male: 0, female: 0, total: 0 };
+        if (row.field) fieldTotals[row.field] = 0;
+      });
+    });
+
+    let mixedScoutMale = 0;
+    let mixedScoutFemale = 0;
+    let unrecordedScoutTotal = 0;
+    let mixedLeaderMale = 0;
+    let mixedLeaderFemale = 0;
+    let unrecordedLeaderTotal = 0;
+    let unassignedLeaderCount = 0;
+
+    periodRecords.forEach(r => {
+      const rScouts = scoutsOf(r);
+      const rMale = Number(r.male || 0);
+      const rFemale = Number(r.female || 0);
+      MMRR_SECTIONS[0].rows.forEach(row => {
+        const count = Number(r[row.field] || 0);
+        fieldTotals[row.field] += count;
+        autoCounts[row.key].total += count;
+        if (count > 0) {
+          if (rMale > 0 && rFemale === 0) autoCounts[row.key].male += count;
+          else if (rFemale > 0 && rMale === 0) autoCounts[row.key].female += count;
+        }
+      });
+      if (rScouts > 0) {
+        if (rMale > 0 && rFemale > 0) {
+          mixedScoutMale += rMale;
+          mixedScoutFemale += rFemale;
+        } else if (rMale === 0 && rFemale === 0) {
+          unrecordedScoutTotal += rScouts;
+        }
+      }
+
+      const rLeaderAssigned = leaderSectionsOf(r);
+      const rLeadersTotal = Number(r.leaders || 0);
+      if (rLeadersTotal > rLeaderAssigned) {
+        unassignedLeaderCount += rLeadersTotal - rLeaderAssigned;
+      }
+      const rLeaderMale = Number(r.leaderMale || 0);
+      const rLeaderFemale = Number(r.leaderFemale || 0);
+      MMRR_SECTIONS[1].rows.forEach(row => {
+        const count = Number(r[row.field] || 0);
+        fieldTotals[row.field] += count;
+        autoCounts[row.key].total += count;
+        if (count > 0) {
+          if (rLeaderMale > 0 && rLeaderFemale === 0) autoCounts[row.key].male += count;
+          else if (rLeaderFemale > 0 && rLeaderMale === 0) autoCounts[row.key].female += count;
+        }
+      });
+      if (rLeaderAssigned > 0) {
+        if (rLeaderMale > 0 && rLeaderFemale > 0) {
+          mixedLeaderMale += rLeaderMale;
+          mixedLeaderFemale += rLeaderFemale;
+        } else if (rLeaderMale === 0 && rLeaderFemale === 0) {
+          unrecordedLeaderTotal += rLeaderAssigned;
+        }
+      }
+
+      const rHeadTotal = Number(r.heads || 0);
+      const rHeadMale = Number(r.headMale || 0);
+      const rHeadFemale = Number(r.headFemale || 0);
+      fieldTotals.heads += rHeadTotal;
+      autoCounts.isr.total += Math.max(rHeadTotal, rHeadMale + rHeadFemale);
+      autoCounts.isr.male += rHeadMale;
+      autoCounts.isr.female += rHeadFemale;
+    });
+
+    if (mixedScoutMale > 0 || mixedScoutFemale > 0 || unrecordedScoutTotal > 0) {
+      mixedScoutNote = { male: mixedScoutMale, female: mixedScoutFemale, unrecorded: unrecordedScoutTotal };
+    }
+    if (mixedLeaderMale > 0 || mixedLeaderFemale > 0 || unrecordedLeaderTotal > 0 || unassignedLeaderCount > 0) {
+      mixedLeaderNote = {
+        male: mixedLeaderMale,
+        female: mixedLeaderFemale,
+        unrecorded: unrecordedLeaderTotal,
+        unassigned: unassignedLeaderCount
+      };
+    }
+
+    const sections = MMRR_SECTIONS.map(sec => {
+      const rows = sec.rows.map(row => {
+        const auto = autoCounts[row.key];
+        const ov = periodOverrides[row.key] || {};
+        const hasOverride = ov.male !== undefined || ov.female !== undefined;
+        const needsSplit = !hasOverride && auto.total > auto.male + auto.female;
+        const male = ov.male !== undefined ? Number(ov.male || 0) : auto.male;
+        const female = ov.female !== undefined ? Number(ov.female || 0) : auto.female;
+        const total = hasOverride ? male + female : Math.max(auto.total, male + female);
+        const totalFees = total * row.fee;
+        return {
+          ...row,
+          male,
+          female,
+          total,
+          totalFees,
+          needsSplit,
+          displayMale: ov.male !== undefined ? ov.male : (needsSplit ? '' : auto.male),
+          displayFemale: ov.female !== undefined ? ov.female : (needsSplit ? '' : auto.female)
+        };
+      });
+      const subTotal = rows.reduce(
+        (acc, r) => ({
+          male: acc.male + r.male,
+          female: acc.female + r.female,
+          total: acc.total + r.total,
+          totalFees: acc.totalFees + r.totalFees
+        }),
+        { male: 0, female: 0, total: 0, totalFees: 0 }
+      );
+      return { ...sec, rows, subTotal };
+    });
+
+    const grandTotal = sections.reduce(
+      (acc, sec) => ({
+        male: acc.male + sec.subTotal.male,
+        female: acc.female + sec.subTotal.female,
+        total: acc.total + sec.subTotal.total,
+        totalFees: acc.totalFees + sec.subTotal.totalFees
+      }),
+      { male: 0, female: 0, total: 0, totalFees: 0 }
+    );
+
+    const autoInstitutions = unique(
+      periodRecords.map(r => `${r.division || ''}|${r.district || ''}|${r.school || ''}`)
+    ).length;
+    const institutions = periodOverrides._institutions !== undefined
+      ? Number(periodOverrides._institutions || 0)
+      : autoInstitutions;
+
+    const units = MMRR_UNITS.map(u => {
+      const autoCount = periodRecords.filter(
+        r => Number(r[u.scoutField] || 0) > 0 || Number(r[u.leaderField] || 0) > 0
+      ).length;
+      const ovUnit = periodOverrides[`_unit_${u.key}`];
+      const count = ovUnit !== undefined ? Number(ovUnit || 0) : autoCount;
+      return { ...u, count, displayCount: ovUnit !== undefined ? ovUnit : autoCount };
+    });
+    const unitsTotal = units.reduce((sum, u) => sum + u.count, 0);
+
+    return {
+      sections,
+      grandTotal,
+      institutions,
+      displayInstitutions: periodOverrides._institutions !== undefined ? periodOverrides._institutions : autoInstitutions,
+      units,
+      unitsTotal,
+      mixedScoutNote,
+      mixedLeaderNote
+    };
+  }, [records, mmrrPeriodKey, mmrrOverrides]);
+
+  function updateMmrrRowCell(rowKey, side, rawValue) {
+    setMmrrOverrides(prev => {
+      const periodMap = { ...(prev[mmrrPeriodKey] || {}) };
+      const rowMap = { ...(periodMap[rowKey] || {}) };
+      if (rawValue === '') {
+        delete rowMap[side];
+      } else {
+        rowMap[side] = Math.max(0, Number(rawValue) || 0);
+      }
+      if (Object.keys(rowMap).length === 0) {
+        delete periodMap[rowKey];
+      } else {
+        periodMap[rowKey] = rowMap;
+      }
+      return { ...prev, [mmrrPeriodKey]: periodMap };
+    });
+  }
+  function updateMmrrMetaCount(metaKey, rawValue) {
+    setMmrrOverrides(prev => {
+      const periodMap = { ...(prev[mmrrPeriodKey] || {}) };
+      if (rawValue === '') {
+        delete periodMap[metaKey];
+      } else {
+        periodMap[metaKey] = Math.max(0, Number(rawValue) || 0);
+      }
+      return { ...prev, [mmrrPeriodKey]: periodMap };
+    });
+  }
+  function resetMmrrOverrides() {
+    setMmrrOverrides(prev => {
+      const next = { ...prev };
+      delete next[mmrrPeriodKey];
+      return next;
+    });
+  }
+  function updateMmrrPerf(field, rawValue) {
+    setMmrrPerf(prev => ({
+      ...prev,
+      [mmrrYear]: { ...(prev[mmrrYear] || {}), [field]: rawValue }
+    }));
+  }
+  function handleSvgUpload(e, setter, storageKey) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = String(reader.result || '').trim();
+      if (!/<svg[\s>]/i.test(content)) {
+        window.alert('Please upload a valid SVG file (.svg).');
+        return;
+      }
+      setter(content);
+      try {
+        localStorage.setItem(storageKey, content);
+      } catch {
+        // Ignore storage quota errors
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+  function clearSvgSignature(setter, storageKey) {
+    setter('');
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {
+      // Ignore storage errors
+    }
+  }
 
   function updateTransmittalCell(rowKey, field, rawValue) {
     setTransmittalOverrides(prev => {
@@ -643,32 +934,10 @@ export default function App() {
     });
   }
   function handleSignatureUpload(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const content = String(reader.result || '').trim();
-      if (!/<svg[\s>]/i.test(content)) {
-        window.alert('Please upload a valid SVG file (.svg).');
-        return;
-      }
-      setTransmittalSignature(content);
-      try {
-        localStorage.setItem(TRANSMITTAL_SIGNATURE_KEY, content);
-      } catch {
-        // Ignore storage quota errors
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+    handleSvgUpload(e, setTransmittalSignature, TRANSMITTAL_SIGNATURE_KEY);
   }
   function clearTransmittalSignature() {
-    setTransmittalSignature('');
-    try {
-      localStorage.removeItem(TRANSMITTAL_SIGNATURE_KEY);
-    } catch {
-      // Ignore storage errors
-    }
+    clearSvgSignature(setTransmittalSignature, TRANSMITTAL_SIGNATURE_KEY);
   }
   const districtNames = [...new Set([
     ...(db.districts[selectedDivision] || []),
@@ -1528,11 +1797,20 @@ export default function App() {
                 >
                   Membership Transmittal
                 </button>
+                <button
+                  type="button"
+                  className={`chip ${reportTab === 'mmrr' ? 'selected' : ''}`}
+                  onClick={() => setReportTab('mmrr')}
+                >
+                  MMRR
+                </button>
               </div>
               {reportTab === 'summary' ? (
                 <button type="button" className="btn gold" onClick={printPage}><Printer size={16}/> Print Report</button>
-              ) : (
+              ) : reportTab === 'transmittal' ? (
                 <button type="button" className="btn gold" onClick={printPage}><Printer size={16}/> Print Membership Transmittal</button>
+              ) : (
+                <button type="button" className="btn gold" onClick={printPage}><Printer size={16}/> Print MMRR</button>
               )}
             </div>
           </div>
@@ -1751,6 +2029,372 @@ export default function App() {
               </div>
             </div>
           </>}
+
+          {reportTab === 'mmrr' && (() => {
+            const perf = mmrrPerf[mmrrYear] || {};
+            const calcPct = (actualVal, targetVal, overrideVal) => {
+              if (overrideVal !== undefined && overrideVal !== '') return overrideVal;
+              const t = Number(targetVal);
+              const a = Number(actualVal);
+              if (t > 0 && actualVal !== undefined && actualVal !== '') {
+                return `${((a / t) * 100).toFixed(2)}%`;
+              }
+              return '';
+            };
+            const mmrrMonthLabel = `${MMRR_SHORT_MONTHS[Number(mmrrMonth) - 1]}-${mmrrYear.slice(-2)}`;
+            const hasMmrrOverrides = mmrrOverrides[mmrrPeriodKey] && Object.keys(mmrrOverrides[mmrrPeriodKey]).length > 0;
+            return <>
+              <Panel
+                className="no-print"
+                title="Monthly Membership Registration Report (MMRR) Settings"
+                subtitle="Select the report month and year, upload SVG signatures with signed dates, and review or adjust counts before printing. Standard fees (₱50 / ₱60 / ₱100) are fixed."
+              >
+                <div className="mmrr-controls-grid">
+                  <label className="field">
+                    <span>Month of</span>
+                    <select className="control" value={mmrrMonth} onChange={e => setMmrrMonth(e.target.value)}>
+                      {monthOptions.filter(m => m !== 'all').map(m => (
+                        <option key={m} value={m}>
+                          {new Date(`2026-${m}-01T00:00:00`).toLocaleDateString('en-US', { month: 'long' })}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Year</span>
+                    <select className="control" value={mmrrYear} onChange={e => setMmrrYear(e.target.value)}>
+                      {transmittalYearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Prepared by Date Signed</span>
+                    <input type="date" value={mmrrPreparedDate} onChange={e => setMmrrPreparedDate(e.target.value)} />
+                  </label>
+                  <label className="field">
+                    <span>Certified Correct Date Signed</span>
+                    <input type="date" value={mmrrCertifiedDate} onChange={e => setMmrrCertifiedDate(e.target.value)} />
+                  </label>
+                </div>
+                <div className="mmrr-sig-toolbar">
+                  <div className="mmrr-sig-group">
+                    <span className="mmrr-sig-label">Registration Officer (SVG):</span>
+                    <label className="btn outline file-button">
+                      <Upload size={15}/> {mmrrPreparedSig ? 'Replace SVG' : 'Upload SVG'}
+                      <input type="file" accept=".svg,image/svg+xml" onChange={e => handleSvgUpload(e, setMmrrPreparedSig, MMRR_PREPARED_SIG_KEY)} />
+                    </label>
+                    {mmrrPreparedSig && (
+                      <button type="button" className="btn outline" onClick={() => clearSvgSignature(setMmrrPreparedSig, MMRR_PREPARED_SIG_KEY)}>
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <div className="mmrr-sig-group">
+                    <span className="mmrr-sig-label">Council Scout Executive (SVG):</span>
+                    <label className="btn outline file-button">
+                      <Upload size={15}/> {mmrrCertifiedSig ? 'Replace SVG' : 'Upload SVG'}
+                      <input type="file" accept=".svg,image/svg+xml" onChange={e => handleSvgUpload(e, setMmrrCertifiedSig, MMRR_CERTIFIED_SIG_KEY)} />
+                    </label>
+                    {mmrrCertifiedSig && (
+                      <button type="button" className="btn outline" onClick={() => clearSvgSignature(setMmrrCertifiedSig, MMRR_CERTIFIED_SIG_KEY)}>
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  {hasMmrrOverrides && (
+                    <button type="button" className="btn outline" onClick={resetMmrrOverrides}>
+                      Reset Manual Edits
+                    </button>
+                  )}
+                </div>
+
+                {(mmrrData.mixedScoutNote || mmrrData.mixedLeaderNote) && (
+                  <div className="notice" style={{ marginTop: '12px' }}>
+                    <strong>Gender breakdown note for {mmrrMonthLabel}:</strong>
+                    <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
+                      {mmrrData.mixedScoutNote && (
+                        <li>
+                          <b>Scouts:</b> Mixed/unrecorded gender records exist for this month (
+                          {mmrrData.mixedScoutNote.male > 0 || mmrrData.mixedScoutNote.female > 0
+                            ? `Mixed records total Male: ${fmt(mmrrData.mixedScoutNote.male)}, Female: ${fmt(mmrrData.mixedScoutNote.female)}`
+                            : ''}
+                          {mmrrData.mixedScoutNote.unrecorded > 0
+                            ? `${mmrrData.mixedScoutNote.male > 0 || mmrrData.mixedScoutNote.female > 0 ? '; ' : ''}${fmt(mmrrData.mixedScoutNote.unrecorded)} without gender`
+                            : ''}
+                          ). Enter Male/Female counts per section directly in the table below.
+                        </li>
+                      )}
+                      {mmrrData.mixedLeaderNote && (
+                        <li>
+                          <b>Unit Leaders:</b>{' '}
+                          {mmrrData.mixedLeaderNote.male > 0 || mmrrData.mixedLeaderNote.female > 0
+                            ? `Mixed records total Male: ${fmt(mmrrData.mixedLeaderNote.male)}, Female: ${fmt(mmrrData.mixedLeaderNote.female)}. `
+                            : ''}
+                          {mmrrData.mixedLeaderNote.unrecorded > 0
+                            ? `${fmt(mmrrData.mixedLeaderNote.unrecorded)} without gender. `
+                            : ''}
+                          {mmrrData.mixedLeaderNote.unassigned > 0
+                            ? `${fmt(mmrrData.mixedLeaderNote.unassigned)} unit leader(s) are not yet assigned to a section.`
+                            : ''}
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </Panel>
+
+              <div className="mmrr-sheet">
+                <div className="mmrr-header">
+                  <div>BOY SCOUTS OF THE PHILIPPINES</div>
+                  <div>MONTHLY MEMBERSHIP REGISTRATION REPORT (MMRR)</div>
+                </div>
+
+                <div className="mmrr-top-boxes">
+                  <table className="mmrr-perf-table">
+                    <thead>
+                      <tr>
+                        <th colSpan={3} className="mmrr-gray-cell">PERFORMANCE MEASURE</th>
+                      </tr>
+                      <tr>
+                        <th />
+                        <th>Scout Potential</th>
+                        <th>Membership Goal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="mmrr-label-cell">Target CY {mmrrYear}</td>
+                        <td>
+                          <input
+                            type="text"
+                            className="mmrr-cell-input"
+                            aria-label="Target CY Scout Potential"
+                            value={perf.targetPotential ?? ''}
+                            onChange={e => updateMmrrPerf('targetPotential', e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            className="mmrr-cell-input"
+                            aria-label="Target CY Membership Goal"
+                            value={perf.targetGoal ?? ''}
+                            onChange={e => updateMmrrPerf('targetGoal', e.target.value)}
+                          />
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="mmrr-label-cell">Actual CY {mmrrYear}</td>
+                        <td>
+                          <input
+                            type="text"
+                            className="mmrr-cell-input"
+                            aria-label="Actual CY Scout Potential"
+                            value={perf.actualPotential ?? ''}
+                            onChange={e => updateMmrrPerf('actualPotential', e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            className="mmrr-cell-input"
+                            aria-label="Actual CY Membership Goal"
+                            value={perf.actualGoal ?? ''}
+                            onChange={e => updateMmrrPerf('actualGoal', e.target.value)}
+                          />
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="mmrr-label-cell">% Against Target</td>
+                        <td>
+                          <input
+                            type="text"
+                            className="mmrr-cell-input"
+                            aria-label="Percent Against Target Scout Potential"
+                            value={calcPct(perf.actualPotential, perf.targetPotential, perf.pctPotential)}
+                            onChange={e => updateMmrrPerf('pctPotential', e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            className="mmrr-cell-input"
+                            aria-label="Percent Against Target Membership Goal"
+                            value={calcPct(perf.actualGoal, perf.targetGoal, perf.pctGoal)}
+                            onChange={e => updateMmrrPerf('pctGoal', e.target.value)}
+                          />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  <table className="mmrr-meta-table">
+                    <tbody>
+                      <tr>
+                        <th className="mmrr-gray-cell">Council:</th>
+                        <td>AGUSAN</td>
+                      </tr>
+                      <tr>
+                        <th className="mmrr-gray-cell">Region:</th>
+                        <td>NEMR</td>
+                      </tr>
+                      <tr>
+                        <th className="mmrr-gray-cell">Month of:</th>
+                        <td>{mmrrMonthLabel}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mmrr-table-wrap">
+                  <table className="mmrr-main-table">
+                    <thead>
+                      <tr>
+                        <th className="mmrr-col-part">PARTICULARS</th>
+                        <th className="mmrr-col-fee">FEES</th>
+                        <th className="mmrr-col-num">MALE</th>
+                        <th className="mmrr-col-num">FEMALE</th>
+                        <th className="mmrr-col-num">TOTAL</th>
+                        <th className="mmrr-col-total-fee">TOTAL FEES</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mmrrData.sections.map(sec => (
+                        <React.Fragment key={sec.id}>
+                          <tr className="mmrr-section-row">
+                            <td colSpan={6}>{sec.title}</td>
+                          </tr>
+                          {sec.rows.map(row => (
+                            <tr key={row.key}>
+                              <td className="mmrr-part-cell">{row.label}</td>
+                              <td className="mmrr-fee-cell">{fmtDec(row.fee)}</td>
+                              <td className={`mmrr-num-cell ${row.needsSplit ? 'needs-input' : ''}`}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="mmrr-cell-input"
+                                  aria-label={`${row.label} Male`}
+                                  value={row.displayMale}
+                                  placeholder={row.needsSplit ? '?' : '0'}
+                                  onChange={e => updateMmrrRowCell(row.key, 'male', e.target.value)}
+                                />
+                              </td>
+                              <td className={`mmrr-num-cell ${row.needsSplit ? 'needs-input' : ''}`}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="mmrr-cell-input"
+                                  aria-label={`${row.label} Female`}
+                                  value={row.displayFemale}
+                                  placeholder={row.needsSplit ? '?' : '0'}
+                                  onChange={e => updateMmrrRowCell(row.key, 'female', e.target.value)}
+                                />
+                              </td>
+                              <td className="mmrr-val-cell">{row.total > 0 ? fmt(row.total) : '-'}</td>
+                              <td className="mmrr-val-cell">{row.totalFees > 0 ? fmtDec(row.totalFees) : '-'}</td>
+                            </tr>
+                          ))}
+                          {sec.hasBlankRow && (
+                            <tr className="mmrr-blank-row">
+                              <td>&nbsp;</td><td /><td /><td /><td /><td />
+                            </tr>
+                          )}
+                          <tr className="mmrr-subtotal-row">
+                            <td className="mmrr-subtotal-label">SUB-TOTAL</td>
+                            <td />
+                            <td className="mmrr-val-cell">{sec.subTotal.male > 0 ? fmt(sec.subTotal.male) : '-'}</td>
+                            <td className="mmrr-val-cell">{sec.subTotal.female > 0 ? fmt(sec.subTotal.female) : '-'}</td>
+                            <td className="mmrr-val-cell">{sec.subTotal.total > 0 ? fmt(sec.subTotal.total) : '-'}</td>
+                            <td className="mmrr-val-cell">{sec.subTotal.totalFees > 0 ? fmtDec(sec.subTotal.totalFees) : '-'}</td>
+                          </tr>
+                        </React.Fragment>
+                      ))}
+                      <tr className="mmrr-grand-row">
+                        <td className="mmrr-subtotal-label">GRAND TOTAL</td>
+                        <td />
+                        <td className="mmrr-val-cell">{mmrrData.grandTotal.male > 0 ? fmt(mmrrData.grandTotal.male) : '-'}</td>
+                        <td className="mmrr-val-cell">{mmrrData.grandTotal.female > 0 ? fmt(mmrrData.grandTotal.female) : '-'}</td>
+                        <td className="mmrr-val-cell">{mmrrData.grandTotal.total > 0 ? fmt(mmrrData.grandTotal.total) : '-'}</td>
+                        <td className="mmrr-val-cell">{mmrrData.grandTotal.totalFees > 0 ? fmtDec(mmrrData.grandTotal.totalFees) : '-'}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <table className="mmrr-inst-table">
+                  <tbody>
+                    <tr>
+                      <th>No. of Sponsoring Institutions</th>
+                      <td>
+                        <input
+                          type="number"
+                          min="0"
+                          className="mmrr-cell-input"
+                          aria-label="No. of Sponsoring Institutions"
+                          value={mmrrData.displayInstitutions}
+                          onChange={e => updateMmrrMetaCount('_institutions', e.target.value)}
+                        />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <table className="mmrr-units-table">
+                  <thead>
+                    <tr>
+                      <th>UNITS</th>
+                      <th>ENTRY</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mmrrData.units.map(u => (
+                      <tr key={u.key}>
+                        <td className="mmrr-unit-name">{u.label}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            className="mmrr-cell-input"
+                            aria-label={`${u.label} unit entry`}
+                            value={u.displayCount}
+                            onChange={e => updateMmrrMetaCount(`_unit_${u.key}`, e.target.value)}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="mmrr-units-total">
+                      <td className="mmrr-unit-name">TOTAL</td>
+                      <td className="mmrr-val-cell">{fmt(mmrrData.unitsTotal)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div className="mmrr-signatures">
+                  <div className="mmrr-sig-col">
+                    <div className="mmrr-sig-heading">Prepared by:</div>
+                    <div className="mmrr-sig-box">
+                      {mmrrPreparedSigUrl && (
+                        <img src={mmrrPreparedSigUrl} alt="Registration Officer e-signature" className="mmrr-sig-img" />
+                      )}
+                    </div>
+                    <div className="mmrr-sig-line" />
+                    <div className="mmrr-sig-role">Registration Officer</div>
+                    <div className="mmrr-sig-date">Date: {mmrrPreparedDate ? formatLongDate(mmrrPreparedDate) : ''}</div>
+                  </div>
+                  <div className="mmrr-sig-col">
+                    <div className="mmrr-sig-heading">Certified Correct:</div>
+                    <div className="mmrr-sig-box">
+                      {mmrrCertifiedSigUrl && (
+                        <img src={mmrrCertifiedSigUrl} alt="Council Scout Executive e-signature" className="mmrr-sig-img" />
+                      )}
+                    </div>
+                    <div className="mmrr-sig-line" />
+                    <div className="mmrr-sig-role">Council Scout Executive</div>
+                    <div className="mmrr-sig-date">Date: {mmrrCertifiedDate ? formatLongDate(mmrrCertifiedDate) : ''}</div>
+                  </div>
+                </div>
+              </div>
+            </>;
+          })()}
         </section>}
 
         {page === 'settings' && <section className="page">
