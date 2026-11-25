@@ -52,6 +52,8 @@ const TRANSMITTAL_BASE_ROWS = [
 const TRANSMITTAL_SIGNATURE_KEY = 'bspAgusanTransmittalSignature';
 const MMRR_PREPARED_SIG_KEY = 'bspAgusanMmrrPreparedSig';
 const MMRR_CERTIFIED_SIG_KEY = 'bspAgusanMmrrCertifiedSig';
+const MMRR_PREPARED_NAME_KEY = 'bspAgusanMmrrPreparedName';
+const MMRR_CERTIFIED_NAME_KEY = 'bspAgusanMmrrCertifiedName';
 const MMRR_SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MMRR_SECTIONS = [
   {
@@ -267,6 +269,8 @@ export default function App() {
   const [mmrrCertifiedDate, setMmrrCertifiedDate] = useState(today);
   const [mmrrPreparedSig, setMmrrPreparedSig] = useState(() => readStoredValue(MMRR_PREPARED_SIG_KEY));
   const [mmrrCertifiedSig, setMmrrCertifiedSig] = useState(() => readStoredValue(MMRR_CERTIFIED_SIG_KEY));
+  const [mmrrPreparedName, setMmrrPreparedName] = useState(() => readStoredValue(MMRR_PREPARED_NAME_KEY));
+  const [mmrrCertifiedName, setMmrrCertifiedName] = useState(() => readStoredValue(MMRR_CERTIFIED_NAME_KEY));
   const [query, setQuery] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
   const [filterUnassignedOnly, setFilterUnassignedOnly] = useState(false);
@@ -1826,7 +1830,40 @@ export default function App() {
             <Panel title="Division Summary"><DivisionSummary divisions={db.divisions} records={records}/></Panel>
           </>}
 
-          {reportTab === 'transmittal' && <>
+          {reportTab === 'transmittal' && (() => {
+            const transmittalIssueRecords = records
+              .filter(r => (r.date || '').startsWith(transmittalPeriodKey))
+              .map(r => {
+                const issues = [];
+                const scoutTotal = scoutsOf(r);
+                const scoutMale = Number(r.male || 0);
+                const scoutFemale = Number(r.female || 0);
+                const leaderTotal = Number(r.leaders || 0);
+                const leaderMale = Number(r.leaderMale || 0);
+                const leaderFemale = Number(r.leaderFemale || 0);
+                const leaderAssigned = leaderSectionsOf(r);
+                const headTotal = Number(r.heads || 0);
+                const headMale = Number(r.headMale || 0);
+                const headFemale = Number(r.headFemale || 0);
+
+                if (scoutMale + scoutFemale !== scoutTotal) {
+                  issues.push(scoutMale === 0 && scoutFemale === 0 ? 'Scout gender not recorded' : 'Scout gender counts need review');
+                }
+                if (leaderAssigned < leaderTotal) {
+                  issues.push(`${leaderTotal - leaderAssigned} unit leader(s) need section assignment`);
+                }
+                if (leaderMale + leaderFemale !== leaderTotal) {
+                  issues.push(leaderMale === 0 && leaderFemale === 0 ? 'Leader gender not recorded' : 'Leader gender counts need review');
+                }
+                if (headMale + headFemale !== headTotal) {
+                  issues.push(headMale === 0 && headFemale === 0 ? 'Institutional head gender not recorded' : 'Institutional head gender counts need review');
+                }
+
+                return issues.length > 0 ? { ...r, issues } : null;
+              })
+              .filter(Boolean);
+
+            return <>
             <Panel
               className="no-print"
               title="Monthly Membership Transmittal Settings"
@@ -1883,6 +1920,34 @@ export default function App() {
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+              {transmittalIssueRecords.length > 0 && (
+                <div className="mmrr-consolidation-list">
+                  <div className="mmrr-consolidation-heading">
+                    <strong>Registration entries needing consolidation</strong>
+                    <span>{transmittalIssueRecords.length} {transmittalIssueRecords.length === 1 ? 'entry' : 'entries'}</span>
+                  </div>
+                  {transmittalIssueRecords.map(r => (
+                    <button
+                      type="button"
+                      className="mmrr-consolidation-entry"
+                      key={r.id}
+                      onClick={() => editRecord(r)}
+                      title="Open and edit this registration entry"
+                    >
+                      <span className="mmrr-consolidation-entry-main">
+                        <strong>{r.school || 'Unnamed institution'}</strong>
+                        <span>{r.division || '—'} · Receipt {r.receipt || '—'}</span>
+                      </span>
+                      <span className="mmrr-consolidation-issues">
+                        {r.issues.join(' · ')}
+                      </span>
+                      <span className="mmrr-consolidation-action">
+                        <Pencil size={13} /> Edit entry
+                      </span>
+                    </button>
+                  ))}
                 </div>
               )}
             </Panel>
@@ -2028,7 +2093,8 @@ export default function App() {
                 <div className="transmittal-signatory-title">Acting Council Scout Executive</div>
               </div>
             </div>
-          </>}
+            </>;
+          })()}
 
           {reportTab === 'mmrr' && (() => {
             const perf = mmrrPerf[mmrrYear] || {};
@@ -2043,6 +2109,37 @@ export default function App() {
             };
             const mmrrMonthLabel = `${MMRR_SHORT_MONTHS[Number(mmrrMonth) - 1]}-${mmrrYear.slice(-2)}`;
             const hasMmrrOverrides = mmrrOverrides[mmrrPeriodKey] && Object.keys(mmrrOverrides[mmrrPeriodKey]).length > 0;
+            const mmrrIssueRecords = records
+              .filter(r => (r.date || '').startsWith(mmrrPeriodKey))
+              .map(r => {
+                const issues = [];
+                const scoutTotal = scoutsOf(r);
+                const scoutMale = Number(r.male || 0);
+                const scoutFemale = Number(r.female || 0);
+                const leaderTotal = Number(r.leaders || 0);
+                const leaderMale = Number(r.leaderMale || 0);
+                const leaderFemale = Number(r.leaderFemale || 0);
+                const leaderAssigned = leaderSectionsOf(r);
+                const headTotal = Number(r.heads || 0);
+                const headMale = Number(r.headMale || 0);
+                const headFemale = Number(r.headFemale || 0);
+
+                if (scoutMale + scoutFemale !== scoutTotal) {
+                  issues.push(scoutMale === 0 && scoutFemale === 0 ? 'Scout gender not recorded' : 'Scout gender counts need review');
+                }
+                if (leaderAssigned < leaderTotal) {
+                  issues.push(`${leaderTotal - leaderAssigned} unit leader(s) need section assignment`);
+                }
+                if (leaderMale + leaderFemale !== leaderTotal) {
+                  issues.push(leaderMale === 0 && leaderFemale === 0 ? 'Leader gender not recorded' : 'Leader gender counts need review');
+                }
+                if (headMale + headFemale !== headTotal) {
+                  issues.push(headMale === 0 && headFemale === 0 ? 'Institutional head gender not recorded' : 'Institutional head gender counts need review');
+                }
+
+                return issues.length > 0 ? { ...r, issues } : null;
+              })
+              .filter(Boolean);
             return <>
               <Panel
                 className="no-print"
@@ -2078,6 +2175,19 @@ export default function App() {
                 <div className="mmrr-sig-toolbar">
                   <div className="mmrr-sig-group">
                     <span className="mmrr-sig-label">Registration Officer (SVG):</span>
+                    <input
+                      type="text"
+                      className="control mmrr-name-input"
+                      aria-label="Registration Officer name"
+                      placeholder="Registration Officer name"
+                      value={mmrrPreparedName}
+                      onChange={e => {
+                        setMmrrPreparedName(e.target.value);
+                        try {
+                          localStorage.setItem(MMRR_PREPARED_NAME_KEY, e.target.value);
+                        } catch {}
+                      }}
+                    />
                     <label className="btn outline file-button">
                       <Upload size={15}/> {mmrrPreparedSig ? 'Replace SVG' : 'Upload SVG'}
                       <input type="file" accept=".svg,image/svg+xml" onChange={e => handleSvgUpload(e, setMmrrPreparedSig, MMRR_PREPARED_SIG_KEY)} />
@@ -2090,6 +2200,19 @@ export default function App() {
                   </div>
                   <div className="mmrr-sig-group">
                     <span className="mmrr-sig-label">Council Scout Executive (SVG):</span>
+                    <input
+                      type="text"
+                      className="control mmrr-name-input"
+                      aria-label="Council Scout Executive name"
+                      placeholder="Council Scout Executive name"
+                      value={mmrrCertifiedName}
+                      onChange={e => {
+                        setMmrrCertifiedName(e.target.value);
+                        try {
+                          localStorage.setItem(MMRR_CERTIFIED_NAME_KEY, e.target.value);
+                        } catch {}
+                      }}
+                    />
                     <label className="btn outline file-button">
                       <Upload size={15}/> {mmrrCertifiedSig ? 'Replace SVG' : 'Upload SVG'}
                       <input type="file" accept=".svg,image/svg+xml" onChange={e => handleSvgUpload(e, setMmrrCertifiedSig, MMRR_CERTIFIED_SIG_KEY)} />
@@ -2138,6 +2261,34 @@ export default function App() {
                         </li>
                       )}
                     </ul>
+                  </div>
+                )}
+                {mmrrIssueRecords.length > 0 && (
+                  <div className="mmrr-consolidation-list">
+                    <div className="mmrr-consolidation-heading">
+                      <strong>Registration entries needing consolidation</strong>
+                      <span>{mmrrIssueRecords.length} {mmrrIssueRecords.length === 1 ? 'entry' : 'entries'}</span>
+                    </div>
+                    {mmrrIssueRecords.map(r => (
+                      <button
+                        type="button"
+                        className="mmrr-consolidation-entry"
+                        key={r.id}
+                        onClick={() => editRecord(r)}
+                        title="Open and edit this registration entry"
+                      >
+                        <span className="mmrr-consolidation-entry-main">
+                          <strong>{r.school || 'Unnamed institution'}</strong>
+                          <span>{r.division || '—'} · Receipt {r.receipt || '—'}</span>
+                        </span>
+                        <span className="mmrr-consolidation-issues">
+                          {r.issues.join(' · ')}
+                        </span>
+                        <span className="mmrr-consolidation-action">
+                          <Pencil size={13} /> Edit entry
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 )}
               </Panel>
@@ -2377,6 +2528,7 @@ export default function App() {
                       )}
                     </div>
                     <div className="mmrr-sig-line" />
+                    {mmrrPreparedName && <div className="mmrr-sig-name">{mmrrPreparedName}</div>}
                     <div className="mmrr-sig-role">Registration Officer</div>
                     <div className="mmrr-sig-date">Date: {mmrrPreparedDate ? formatLongDate(mmrrPreparedDate) : ''}</div>
                   </div>
@@ -2388,6 +2540,7 @@ export default function App() {
                       )}
                     </div>
                     <div className="mmrr-sig-line" />
+                    {mmrrCertifiedName && <div className="mmrr-sig-name">{mmrrCertifiedName}</div>}
                     <div className="mmrr-sig-role">Council Scout Executive</div>
                     <div className="mmrr-sig-date">Date: {mmrrCertifiedDate ? formatLongDate(mmrrCertifiedDate) : ''}</div>
                   </div>
