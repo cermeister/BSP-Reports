@@ -788,8 +788,8 @@ export default function App() {
           total,
           totalFees,
           needsSplit,
-          displayMale: ov.male !== undefined ? ov.male : (needsSplit ? '' : auto.male),
-          displayFemale: ov.female !== undefined ? ov.female : (needsSplit ? '' : auto.female)
+          displayMale: ov.male !== undefined ? ov.male : (needsSplit && auto.male === 0 ? '' : auto.male),
+          displayFemale: ov.female !== undefined ? ov.female : (needsSplit && auto.female === 0 ? '' : auto.female)
         };
       });
       const subTotal = rows.reduce(
@@ -2289,7 +2289,7 @@ export default function App() {
                                   onChange={e => updateMmrrRowCell(row.key, 'female', e.target.value)}
                                 />
                               </td>
-                              <td className="mmrr-val-cell">{row.total > 0 ? fmt(row.total) : '-'}</td>
+                              <td className="mmrr-count-cell">{row.total > 0 ? fmt(row.total) : '-'}</td>
                               <td className="mmrr-val-cell">{row.totalFees > 0 ? fmtDec(row.totalFees) : '-'}</td>
                             </tr>
                           ))}
@@ -2301,9 +2301,9 @@ export default function App() {
                           <tr className="mmrr-subtotal-row">
                             <td className="mmrr-subtotal-label">SUB-TOTAL</td>
                             <td />
-                            <td className="mmrr-val-cell">{sec.subTotal.male > 0 ? fmt(sec.subTotal.male) : '-'}</td>
-                            <td className="mmrr-val-cell">{sec.subTotal.female > 0 ? fmt(sec.subTotal.female) : '-'}</td>
-                            <td className="mmrr-val-cell">{sec.subTotal.total > 0 ? fmt(sec.subTotal.total) : '-'}</td>
+                            <td className="mmrr-count-cell">{sec.subTotal.male > 0 ? fmt(sec.subTotal.male) : '-'}</td>
+                            <td className="mmrr-count-cell">{sec.subTotal.female > 0 ? fmt(sec.subTotal.female) : '-'}</td>
+                            <td className="mmrr-count-cell">{sec.subTotal.total > 0 ? fmt(sec.subTotal.total) : '-'}</td>
                             <td className="mmrr-val-cell">{sec.subTotal.totalFees > 0 ? fmtDec(sec.subTotal.totalFees) : '-'}</td>
                           </tr>
                         </React.Fragment>
@@ -2311,9 +2311,9 @@ export default function App() {
                       <tr className="mmrr-grand-row">
                         <td className="mmrr-subtotal-label">GRAND TOTAL</td>
                         <td />
-                        <td className="mmrr-val-cell">{mmrrData.grandTotal.male > 0 ? fmt(mmrrData.grandTotal.male) : '-'}</td>
-                        <td className="mmrr-val-cell">{mmrrData.grandTotal.female > 0 ? fmt(mmrrData.grandTotal.female) : '-'}</td>
-                        <td className="mmrr-val-cell">{mmrrData.grandTotal.total > 0 ? fmt(mmrrData.grandTotal.total) : '-'}</td>
+                        <td className="mmrr-count-cell">{mmrrData.grandTotal.male > 0 ? fmt(mmrrData.grandTotal.male) : '-'}</td>
+                        <td className="mmrr-count-cell">{mmrrData.grandTotal.female > 0 ? fmt(mmrrData.grandTotal.female) : '-'}</td>
+                        <td className="mmrr-count-cell">{mmrrData.grandTotal.total > 0 ? fmt(mmrrData.grandTotal.total) : '-'}</td>
                         <td className="mmrr-val-cell">{mmrrData.grandTotal.totalFees > 0 ? fmtDec(mmrrData.grandTotal.totalFees) : '-'}</td>
                       </tr>
                     </tbody>
@@ -2363,7 +2363,7 @@ export default function App() {
                     ))}
                     <tr className="mmrr-units-total">
                       <td className="mmrr-unit-name">TOTAL</td>
-                      <td className="mmrr-val-cell">{fmt(mmrrData.unitsTotal)}</td>
+                      <td className="mmrr-count-cell">{fmt(mmrrData.unitsTotal)}</td>
                     </tr>
                   </tbody>
                 </table>
