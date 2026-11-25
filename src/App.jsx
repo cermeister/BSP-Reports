@@ -36,6 +36,20 @@ const SECTION_COLORS = {
   'Rover Scouts': '#123a5a'
 };
 const SECTION_COLOR_LIST = ['#cfe7f6', '#f5c94c', '#2c9a6f', '#d34b4b', '#123a5a'];
+const TRANSMITTAL_SECTIONS = [
+  ['kid', 'KID', '#4da3e1', '#111111'],
+  ['kab', 'KAB', '#fff200', '#111111'],
+  ['boy', 'BOY', '#12a14b', '#111111'],
+  ['senior', 'SENIOR', '#e61c1c', '#ffffff'],
+  ['rover', 'ROVER', '#072b4f', '#ffffff']
+];
+const TRANSMITTAL_BASE_ROWS = [
+  { key: 'agusan-del-norte', label: 'AGUSAN DEL NORTE', match: ['agusan del norte', 'agusan del norte division'] },
+  { key: 'butuan-city', label: 'BUTUAN CITY', match: ['butuan city', 'butuan city division'] },
+  { key: 'cabadbaran-city', label: 'CABADBARAN CITY', match: ['cabadbaran city', 'cabadbaran city division'] },
+  { key: 'community-institution', label: 'COMMUNITY INSTITUTION', match: ['community institution', 'community institution division', 'community'] }
+];
+const TRANSMITTAL_SIGNATURE_KEY = 'bspAgusanTransmittalSignature';
 const STORAGE_KEY = 'bspAgusanReact';
 const AUTH_STORAGE_KEY = 'bspAgusanAuth_v2';
 const CURRENT_AUTH_SESSION_VERSION = 2;
@@ -65,6 +79,12 @@ const formatDisplayDate = dateStr => {
   const parsed = new Date(`${dateStr}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return dateStr;
   return parsed.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+const formatLongDate = dateStr => {
+  if (!dateStr) return '';
+  const parsed = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return dateStr;
+  return parsed.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 };
 const money = n => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(n || 0));
 const fmt = n => new Intl.NumberFormat('en-PH').format(Number(n || 0));
@@ -177,6 +197,18 @@ export default function App() {
   const [dateRangeStart, setDateRangeStart] = useState(today);
   const [dateRangeEnd, setDateRangeEnd] = useState(today);
   const [trendView, setTrendView] = useState('monthly');
+  const [reportTab, setReportTab] = useState('summary');
+  const [transmittalMonth, setTransmittalMonth] = useState(() => String(new Date().getMonth() + 1).padStart(2, '0'));
+  const [transmittalYear, setTransmittalYear] = useState(() => String(new Date().getFullYear()));
+  const [transmittalDate, setTransmittalDate] = useState(today);
+  const [transmittalOverrides, setTransmittalOverrides] = useState({});
+  const [transmittalSignature, setTransmittalSignature] = useState(() => {
+    try {
+      return localStorage.getItem(TRANSMITTAL_SIGNATURE_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
   const [query, setQuery] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
   const [filterUnassignedOnly, setFilterUnassignedOnly] = useState(false);
@@ -448,6 +480,196 @@ export default function App() {
     () => (trendView === 'daily' ? dailyData(dashboardRecords, 'paid') : monthlyData(dashboardRecords, 'paid')),
     [dashboardRecords, trendView]
   );
+  const transmittalPeriodKey = `${transmittalYear}-${transmittalMonth}`;
+  const transmittalYearOptions = useMemo(() => {
+    const thisYear = new Date().getFullYear();
+    const recordYears = records.map(r => Number((r.date || '').slice(0, 4))).filter(Boolean);
+    const minYear = Math.min(thisYear - 2, ...recordYears);
+    const maxYear = Math.max(thisYear + 10, ...recordYears);
+    const list = [];
+    for (let y = minYear; y <= maxYear; y += 1) list.push(String(y));
+    return list;
+  }, [records]);
+  const transmittalRows = useMemo(() => {
+    const periodRecords = records.filter(r => (r.date || '').startsWith(transmittalPeriodKey));
+    const normalizeDiv = v => String(v || '').trim().toLowerCase();
+    const knownMatches = new Set(TRANSMITTAL_BASE_ROWS.flatMap(row => row.match));
+    const extraDivisions = unique([
+      ...db.divisions,
+      ...periodRecords.map(r => r.division)
+    ]).filter(div => !knownMatches.has(normalizeDiv(div)));
+    const rowConfigs = [
+      ...TRANSMITTAL_BASE_ROWS,
+      ...extraDivisions.map(div => ({
+        key: `extra-${normalizeDiv(div).replace(/[^a-z0-9]+/g, '-')}`,
+        label: String(div).replace(/\s+division$/i, '').toUpperCase(),
+        match: [normalizeDiv(div)]
+      }))
+    ];
+    const periodOverrides = transmittalOverrides[transmittalPeriodKey] || {};
+    return rowConfigs.map((cfg, index) => {
+      const rowRecords = periodRecords.filter(r => cfg.match.includes(normalizeDiv(r.division)));
+      const rowOverrides = periodOverrides[cfg.key] || {};
+      const auto = {
+        kidM: 0, kidF: 0, kabM: 0, kabF: 0, boyM: 0, boyF: 0, seniorM: 0, seniorF: 0, roverM: 0, roverF: 0,
+        aisM: 0, aisF: 0
+      };
+      const sectionTotals = { kid: 0, kab: 0, boy: 0, senior: 0, rover: 0 };
+      let mixedScouts = 0;
+      let mixedMale = 0;
+      let mixedFemale = 0;
+      let unrecordedGenderScouts = 0;
+
+      rowRecords.forEach(r => {
+        const scoutTotal = scoutsOf(r);
+        const rMale = Number(r.male || 0);
+        const rFemale = Number(r.female || 0);
+        auto.aisM += Number(r.leaderMale || 0) + Number(r.headMale || 0);
+        auto.aisF += Number(r.leaderFemale || 0) + Number(r.headFemale || 0);
+        SECTIONS.forEach(([secKey]) => {
+          sectionTotals[secKey] += Number(r[secKey] || 0);
+        });
+        if (scoutTotal > 0) {
+          if (rMale > 0 && rFemale === 0) {
+            SECTIONS.forEach(([secKey]) => {
+              auto[`${secKey}M`] += Number(r[secKey] || 0);
+            });
+          } else if (rFemale > 0 && rMale === 0) {
+            SECTIONS.forEach(([secKey]) => {
+              auto[`${secKey}F`] += Number(r[secKey] || 0);
+            });
+          } else if (rMale > 0 && rFemale > 0) {
+            mixedScouts += scoutTotal;
+            mixedMale += rMale;
+            mixedFemale += rFemale;
+          } else {
+            unrecordedGenderScouts += scoutTotal;
+          }
+        }
+      });
+
+      const needsSplit = {};
+      SECTIONS.forEach(([secKey]) => {
+        const autoSplitSum = auto[`${secKey}M`] + auto[`${secKey}F`];
+        const hasMissingSplit = sectionTotals[secKey] > autoSplitSum;
+        const hasOverride = rowOverrides[`${secKey}M`] !== undefined || rowOverrides[`${secKey}F`] !== undefined;
+        needsSplit[secKey] = hasMissingSplit && !hasOverride;
+      });
+
+      const val = field => (rowOverrides[field] !== undefined ? Number(rowOverrides[field] || 0) : auto[field]);
+      const displayVal = (field, secKey) => {
+        if (rowOverrides[field] !== undefined) return rowOverrides[field];
+        if (secKey && needsSplit[secKey]) return '';
+        return auto[field];
+      };
+
+      let totalScouts = 0;
+      SECTIONS.forEach(([secKey]) => {
+        const hasSecOverride = rowOverrides[`${secKey}M`] !== undefined || rowOverrides[`${secKey}F`] !== undefined;
+        if (hasSecOverride) {
+          totalScouts += val(`${secKey}M`) + val(`${secKey}F`);
+        } else {
+          totalScouts += Math.max(sectionTotals[secKey], auto[`${secKey}M`] + auto[`${secKey}F`]);
+        }
+      });
+
+      const aisM = val('aisM');
+      const aisF = val('aisF');
+      const totalRegistered = totalScouts + aisM + aisF;
+
+      return {
+        no: index + 1,
+        key: cfg.key,
+        label: cfg.label,
+        recordCount: rowRecords.length,
+        auto,
+        sectionTotals,
+        needsSplit,
+        hasMixedOrMissingGender: mixedScouts > 0 || unrecordedGenderScouts > 0,
+        mixedMale,
+        mixedFemale,
+        unrecordedGenderScouts,
+        val,
+        displayVal,
+        totalScouts,
+        aisM,
+        aisF,
+        totalRegistered
+      };
+    });
+  }, [records, db.divisions, transmittalPeriodKey, transmittalOverrides]);
+
+  const transmittalTotals = useMemo(() => {
+    const sum = {
+      kidM: 0, kidF: 0, kabM: 0, kabF: 0, boyM: 0, boyF: 0, seniorM: 0, seniorF: 0, roverM: 0, roverF: 0,
+      totalScouts: 0, aisM: 0, aisF: 0, totalRegistered: 0
+    };
+    transmittalRows.forEach(row => {
+      SECTIONS.forEach(([secKey]) => {
+        sum[`${secKey}M`] += row.val(`${secKey}M`);
+        sum[`${secKey}F`] += row.val(`${secKey}F`);
+      });
+      sum.totalScouts += row.totalScouts;
+      sum.aisM += row.aisM;
+      sum.aisF += row.aisF;
+      sum.totalRegistered += row.totalRegistered;
+    });
+    return sum;
+  }, [transmittalRows]);
+
+  const transmittalSignatureUrl = useMemo(() => {
+    if (!transmittalSignature) return '';
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(transmittalSignature)}`;
+  }, [transmittalSignature]);
+
+  function updateTransmittalCell(rowKey, field, rawValue) {
+    setTransmittalOverrides(prev => {
+      const periodMap = { ...(prev[transmittalPeriodKey] || {}) };
+      const rowMap = { ...(periodMap[rowKey] || {}) };
+      if (rawValue === '') {
+        delete rowMap[field];
+      } else {
+        rowMap[field] = Math.max(0, Number(rawValue) || 0);
+      }
+      periodMap[rowKey] = rowMap;
+      return { ...prev, [transmittalPeriodKey]: periodMap };
+    });
+  }
+  function resetTransmittalOverrides() {
+    setTransmittalOverrides(prev => {
+      const next = { ...prev };
+      delete next[transmittalPeriodKey];
+      return next;
+    });
+  }
+  function handleSignatureUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = String(reader.result || '').trim();
+      if (!/<svg[\s>]/i.test(content)) {
+        window.alert('Please upload a valid SVG file (.svg).');
+        return;
+      }
+      setTransmittalSignature(content);
+      try {
+        localStorage.setItem(TRANSMITTAL_SIGNATURE_KEY, content);
+      } catch {
+        // Ignore storage quota errors
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+  function clearTransmittalSignature() {
+    setTransmittalSignature('');
+    try {
+      localStorage.removeItem(TRANSMITTAL_SIGNATURE_KEY);
+    } catch {
+      // Ignore storage errors
+    }
+  }
   const districtNames = [...new Set([
     ...(db.districts[selectedDivision] || []),
     ...dashboardRecords.filter(r => r.division === selectedDivision).map(r => r.district).filter(Boolean)
@@ -1285,15 +1507,250 @@ export default function App() {
         </section>}
 
         {page === 'reports' && <section className="page">
-          <div className="page-heading"><div><h1>Reports & Print Center</h1><p>Printable council registration and collection summaries.</p></div><button className="btn gold" onClick={printPage}><Printer size={16}/> Print Report</button></div>
-          <div className="notice">Reports are generated from records saved in this browser. Use Backup regularly to protect your data.</div>
-          <div className="metric-grid"><Metric label="Total Scouts" value={fmt(totalsOf(records).scouts)} note="All encoded years" icon={Users}/><MetricWithGender label="Unit Leaders" total={fmt(totalsOf(records).leaders)} male={fmt(totalsOf(records).leaderMale)} female={fmt(totalsOf(records).leaderFemale)} note="All divisions" icon={UserRound}/><MetricWithGender label="Institutional Heads" total={fmt(totalsOf(records).heads)} male={fmt(totalsOf(records).headMale)} female={fmt(totalsOf(records).headFemale)} note="All divisions" icon={School}/><Metric label="Registrations" value={fmt(records.length)} note="School submissions" icon={School}/><Metric label="Collections" value={money(totalsOf(records).paid)} note="Actual recorded payments" icon={PhilippinePeso}/></div>
-          <div className="two-col"><Panel title="Scouts by Division"><ChartPie data={scoutByDivision}/></Panel><Panel title="Unit Leaders by Division"><ChartPie data={leadersByDivision}/></Panel></div>
-          <div className="two-col">
-            <Panel title="Scout Section Summary"><div className="table-wrap"><table><thead><tr><th>Scout Section</th><th>Total Registered</th></tr></thead><tbody>{SECTIONS.map(([k,label]) => <tr key={k}><td>{label}</td><td>{fmt(totalsOf(records)[k])}</td></tr>)}<tr><th>Total Scouts</th><th>{fmt(totalsOf(records).scouts)}</th></tr></tbody></table></div></Panel>
-            <Panel title="Unit Leader Section Summary"><div className="table-wrap"><table><thead><tr><th>Leader Role / Section</th><th>Total Registered</th></tr></thead><tbody>{LEADER_SECTIONS.map(([k,label]) => <tr key={k}><td>{label}</td><td>{fmt(totalsOf(records)[k])}</td></tr>)}<tr><th>Total Unit Leaders</th><th>{fmt(totalsOf(records).leaders)}</th></tr></tbody></table></div></Panel>
+          <div className="page-heading no-print">
+            <div>
+              <h1>Reports & Print Center</h1>
+              <p>Printable council registration, collection summaries, and monthly membership transmittal.</p>
+            </div>
+            <div className="header-controls">
+              <div className="chip-row" style={{ margin: 0 }}>
+                <button
+                  type="button"
+                  className={`chip ${reportTab === 'summary' ? 'selected' : ''}`}
+                  onClick={() => setReportTab('summary')}
+                >
+                  Council Summary
+                </button>
+                <button
+                  type="button"
+                  className={`chip ${reportTab === 'transmittal' ? 'selected' : ''}`}
+                  onClick={() => setReportTab('transmittal')}
+                >
+                  Membership Transmittal
+                </button>
+              </div>
+              {reportTab === 'summary' ? (
+                <button type="button" className="btn gold" onClick={printPage}><Printer size={16}/> Print Report</button>
+              ) : (
+                <button type="button" className="btn gold" onClick={printPage}><Printer size={16}/> Print Membership Transmittal</button>
+              )}
+            </div>
           </div>
-          <Panel title="Division Summary"><DivisionSummary divisions={db.divisions} records={records}/></Panel>
+
+          {reportTab === 'summary' && <>
+            <div className="notice no-print">Reports are generated from records saved in this browser. Use Backup regularly to protect your data.</div>
+            <div className="metric-grid"><Metric label="Total Scouts" value={fmt(totalsOf(records).scouts)} note="All encoded years" icon={Users}/><MetricWithGender label="Unit Leaders" total={fmt(totalsOf(records).leaders)} male={fmt(totalsOf(records).leaderMale)} female={fmt(totalsOf(records).leaderFemale)} note="All divisions" icon={UserRound}/><MetricWithGender label="Institutional Heads" total={fmt(totalsOf(records).heads)} male={fmt(totalsOf(records).headMale)} female={fmt(totalsOf(records).headFemale)} note="All divisions" icon={School}/><Metric label="Registrations" value={fmt(records.length)} note="School submissions" icon={School}/><Metric label="Collections" value={money(totalsOf(records).paid)} note="Actual recorded payments" icon={PhilippinePeso}/></div>
+            <div className="two-col"><Panel title="Scouts by Division"><ChartPie data={scoutByDivision}/></Panel><Panel title="Unit Leaders by Division"><ChartPie data={leadersByDivision}/></Panel></div>
+            <div className="two-col">
+              <Panel title="Scout Section Summary"><div className="table-wrap"><table><thead><tr><th>Scout Section</th><th>Total Registered</th></tr></thead><tbody>{SECTIONS.map(([k,label]) => <tr key={k}><td>{label}</td><td>{fmt(totalsOf(records)[k])}</td></tr>)}<tr><th>Total Scouts</th><th>{fmt(totalsOf(records).scouts)}</th></tr></tbody></table></div></Panel>
+              <Panel title="Unit Leader Section Summary"><div className="table-wrap"><table><thead><tr><th>Leader Role / Section</th><th>Total Registered</th></tr></thead><tbody>{LEADER_SECTIONS.map(([k,label]) => <tr key={k}><td>{label}</td><td>{fmt(totalsOf(records)[k])}</td></tr>)}<tr><th>Total Unit Leaders</th><th>{fmt(totalsOf(records).leaders)}</th></tr></tbody></table></div></Panel>
+            </div>
+            <Panel title="Division Summary"><DivisionSummary divisions={db.divisions} records={records}/></Panel>
+          </>}
+
+          {reportTab === 'transmittal' && <>
+            <Panel
+              className="no-print"
+              title="Monthly Membership Transmittal Settings"
+              subtitle="Choose the transmittal month, year, letter date, and optional SVG e-signature. Counts auto-fill from matching monthly records and can be adjusted in the table before printing."
+            >
+              <div className="transmittal-controls">
+                <label className="field">
+                  <span>For the Month of</span>
+                  <select className="control" value={transmittalMonth} onChange={e => setTransmittalMonth(e.target.value)}>
+                    {monthOptions.filter(m => m !== 'all').map(m => (
+                      <option key={m} value={m}>
+                        {new Date(`2026-${m}-01T00:00:00`).toLocaleDateString('en-US', { month: 'long' })}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Year</span>
+                  <select className="control" value={transmittalYear} onChange={e => setTransmittalYear(e.target.value)}>
+                    {transmittalYearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Transmittal Date</span>
+                  <input type="date" value={transmittalDate} onChange={e => setTransmittalDate(e.target.value)} />
+                </label>
+                <div className="transmittal-sig-actions">
+                  <label className="btn outline file-button">
+                    <Upload size={15}/> {transmittalSignature ? 'Replace SVG Signature' : 'Upload SVG Signature'}
+                    <input type="file" accept=".svg,image/svg+xml" onChange={handleSignatureUpload} />
+                  </label>
+                  {transmittalSignature && (
+                    <button type="button" className="btn outline" onClick={clearTransmittalSignature}>
+                      Remove Signature
+                    </button>
+                  )}
+                  {transmittalOverrides[transmittalPeriodKey] && Object.keys(transmittalOverrides[transmittalPeriodKey]).length > 0 && (
+                    <button type="button" className="btn outline" onClick={resetTransmittalOverrides}>
+                      Reset Manual Edits
+                    </button>
+                  )}
+                </div>
+              </div>
+              {transmittalRows.some(row => row.hasMixedOrMissingGender) && (
+                <div className="notice" style={{ marginTop: '12px' }}>
+                  <strong>Per-section gender input note:</strong> Registration records store Male/Female scout totals across all sections combined. For rows with mixed or unrecorded scout genders below, enter the M/F breakdown per section directly in the table before printing:
+                  <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
+                    {transmittalRows.filter(row => row.hasMixedOrMissingGender).map(row => (
+                      <li key={row.key}>
+                        <b>{row.label}:</b>{' '}
+                        {SECTIONS.filter(([secKey]) => row.sectionTotals[secKey] > 0).map(([secKey, label]) => `${label.replace(' Scouts', '')}: ${fmt(row.sectionTotals[secKey])}`).join(', ')}
+                        {(row.mixedMale > 0 || row.mixedFemale > 0) ? ` (Mixed records — Male: ${fmt(row.mixedMale)}, Female: ${fmt(row.mixedFemale)})` : ''}
+                        {row.unrecordedGenderScouts > 0 ? ` (${fmt(row.unrecordedGenderScouts)} without gender recorded)` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Panel>
+
+            <div className="transmittal-sheet">
+              <div className="transmittal-header">
+                <div>BOY SCOUTS OF THE PHILIPPINES</div>
+                <div>NORTHEASTERN MINDANAO REGION</div>
+                <div className="transmittal-council">AGUSAN COUNCIL</div>
+                <div className="transmittal-title">MEMBERSHIP TRANSMITTAL</div>
+                <div className="transmittal-period">
+                  for the month of{' '}
+                  <span className="transmittal-month-underline">
+                    {new Date(`${transmittalYear}-${transmittalMonth}-01T00:00:00`).toLocaleDateString('en-US', { month: 'long' })}
+                  </span>{' '}
+                  {transmittalYear}
+                </div>
+              </div>
+
+              <div className="transmittal-date">{formatLongDate(transmittalDate)}</div>
+
+              <div className="transmittal-addressee">
+                <div><b>ROSCHELLE JOHN BENEDICT O. MEDELLIN</b></div>
+                <div>RYDO III (Assigned In Charge)</div>
+                <div>Northeastern Mindanao Regional Coordination Office</div>
+              </div>
+
+              <div className="transmittal-salutation">Sir:</div>
+              <p className="transmittal-intro">
+                Respectfully submitted herewith are the Membership Forms of this Council for the above-stated period, summarized as follows:
+              </p>
+
+              <div className="transmittal-table-wrap">
+                <table className="transmittal-table">
+                  <thead>
+                    <tr>
+                      <th rowSpan={2} className="col-no">NO.</th>
+                      <th rowSpan={2} className="col-division">SCHOOLS DIVISION/<br/>COMMUNITY</th>
+                      {TRANSMITTAL_SECTIONS.map(([, label, bg, color]) => (
+                        <th key={label} colSpan={2} className="col-section" style={{ backgroundColor: bg, color }}>
+                          {label}
+                        </th>
+                      ))}
+                      <th rowSpan={2} className="col-total-scouts">TOTAL<br/>SCOUTS</th>
+                      <th colSpan={2} className="col-ais">AIS</th>
+                      <th rowSpan={2} className="col-total-reg">TOTAL<br/>REGISTERED</th>
+                    </tr>
+                    <tr>
+                      {TRANSMITTAL_SECTIONS.map(([, label]) => (
+                        <React.Fragment key={`${label}-mf`}>
+                          <th className="col-mf">M</th>
+                          <th className="col-mf">F</th>
+                        </React.Fragment>
+                      ))}
+                      <th className="col-mf">M</th>
+                      <th className="col-mf">F</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transmittalRows.map(row => (
+                      <tr key={row.key}>
+                        <td className="text-center">{row.no}</td>
+                        <td className="division-cell">{row.label}</td>
+                        {TRANSMITTAL_SECTIONS.map(([secKey]) => (
+                          <React.Fragment key={`${row.key}-${secKey}`}>
+                            <td className={`num-cell ${row.needsSplit[secKey] ? 'needs-input' : ''}`}>
+                              <input
+                                type="number"
+                                min="0"
+                                className="transmittal-cell-input"
+                                aria-label={`${row.label} ${secKey} male`}
+                                value={row.displayVal(`${secKey}M`, secKey)}
+                                placeholder={row.needsSplit[secKey] ? '?' : '0'}
+                                onChange={e => updateTransmittalCell(row.key, `${secKey}M`, e.target.value)}
+                              />
+                            </td>
+                            <td className={`num-cell ${row.needsSplit[secKey] ? 'needs-input' : ''}`}>
+                              <input
+                                type="number"
+                                min="0"
+                                className="transmittal-cell-input"
+                                aria-label={`${row.label} ${secKey} female`}
+                                value={row.displayVal(`${secKey}F`, secKey)}
+                                placeholder={row.needsSplit[secKey] ? '?' : '0'}
+                                onChange={e => updateTransmittalCell(row.key, `${secKey}F`, e.target.value)}
+                              />
+                            </td>
+                          </React.Fragment>
+                        ))}
+                        <td className="text-center total-col">{fmt(row.totalScouts)}</td>
+                        <td className="num-cell">
+                          <input
+                            type="number"
+                            min="0"
+                            className="transmittal-cell-input"
+                            aria-label={`${row.label} AIS male`}
+                            value={row.displayVal('aisM')}
+                            onChange={e => updateTransmittalCell(row.key, 'aisM', e.target.value)}
+                          />
+                        </td>
+                        <td className="num-cell">
+                          <input
+                            type="number"
+                            min="0"
+                            className="transmittal-cell-input"
+                            aria-label={`${row.label} AIS female`}
+                            value={row.displayVal('aisF')}
+                            onChange={e => updateTransmittalCell(row.key, 'aisF', e.target.value)}
+                          />
+                        </td>
+                        <td className="text-center total-col">{fmt(row.totalRegistered)}</td>
+                      </tr>
+                    ))}
+                    <tr className="transmittal-total-row">
+                      <td colSpan={2} className="text-center">TOTAL</td>
+                      {TRANSMITTAL_SECTIONS.map(([secKey]) => (
+                        <React.Fragment key={`total-${secKey}`}>
+                          <td className="text-center">{fmt(transmittalTotals[`${secKey}M`])}</td>
+                          <td className="text-center">{fmt(transmittalTotals[`${secKey}F`])}</td>
+                        </React.Fragment>
+                      ))}
+                      <td className="text-center">{fmt(transmittalTotals.totalScouts)}</td>
+                      <td className="text-center">{fmt(transmittalTotals.aisM)}</td>
+                      <td className="text-center">{fmt(transmittalTotals.aisF)}</td>
+                      <td className="text-center">{fmt(transmittalTotals.totalRegistered)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <p className="transmittal-closing-note">
+                Attached herewith is the MRR and other required membership documents for your review and recording.
+              </p>
+
+              <div className="transmittal-signature-block">
+                <div className="transmittal-respectfully">Respectfully yours,</div>
+                <div className="transmittal-signature-space">
+                  {transmittalSignatureUrl && (
+                    <img src={transmittalSignatureUrl} alt="Brando E. Faelnar e-signature" className="transmittal-signature-img" />
+                  )}
+                </div>
+                <div className="transmittal-signatory-name">BRANDO E. FAELNAR</div>
+                <div className="transmittal-signatory-title">Acting Council Scout Executive</div>
+              </div>
+            </div>
+          </>}
         </section>}
 
         {page === 'settings' && <section className="page">
